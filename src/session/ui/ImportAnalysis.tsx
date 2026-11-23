@@ -1,3 +1,4 @@
+import type { ComponentChild } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import type { AppContext } from '../../types';
@@ -237,6 +238,32 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
         {(() => {
           // The sets as they form — see LiveSession's feed.
           const feed = feedItems(annotations);
+          // The table only when there is a set to show: never asked, nothing
+          // is saved with the analysis (the sets off).
+          const table = feed.items.some(x => x.kind === 'chain') ? imp.getTunesets() : [];
+          // The list's sets and the Focus view's, one card.
+          const renderSet = (chain: Detection[], children: ComponentChild, position?: { at: number; of: number }) => (
+            <TunesetDetectionCard
+              key={`set-${chain[0]!.id}`}
+              chain={chain}
+              opts={{
+                ctx,
+                session: { id: imp.sessionId, name: '', date: null, duration: feed.duration },
+                onOpenCard,
+                getPinnedDeckIds: () => imp.pinnedDeckIds,
+                onChanged: () => setDetections(imp.getDetections()),
+                record: recordOf(table, chain),
+                onToggleLike: (r) => { imp.toggleSetLike(r.id); setDetections(imp.getDetections()); },
+                onEditNotes: (r, notes) => { imp.setSetNotes(r.id, notes); setDetections(imp.getDetections()); },
+                sessionStartMs: imp.dateOverride ? Date.parse(imp.dateOverride) : undefined,
+                details,
+                study,
+                position,
+              }}
+            >
+              {children}
+            </TunesetDetectionCard>
+          );
           if (showsFocus(view)) {
             return (
               <FocusView
@@ -244,39 +271,17 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
                 spot={focus.spot}
                 chains={feedChains(feed)}
                 renderCard={(ann, note) => <DetectionCard key={ann.id} ann={ann} opts={{ ...cardOpts, focus: true, focusNote: note }} />}
+                renderSet={renderSet}
                 onGo={focus.onGo}
                 feed={{ kind: 'import', latest: focus.latest, onBack: focus.onBack }}
               />
             );
           }
-          // The table only when there is a set to show: never asked, nothing
-          // is saved with the analysis (the sets off).
-          const table = feed.items.some(x => x.kind === 'chain') ? imp.getTunesets() : [];
           return (
             <FeedList
               feed={feed}
               renderAnn={ann => <DetectionCard key={ann.id} ann={ann} opts={cardOpts} />}
-              renderSet={(chain, children) => (
-                <TunesetDetectionCard
-                  key={`set-${chain[0]!.id}`}
-                  chain={chain}
-                  opts={{
-                    ctx,
-                    session: { id: imp.sessionId, name: '', date: null, duration: feed.duration },
-                    onOpenCard,
-                    getPinnedDeckIds: () => imp.pinnedDeckIds,
-                    onChanged: () => setDetections(imp.getDetections()),
-                    record: recordOf(table, chain),
-                    onToggleLike: (r) => { imp.toggleSetLike(r.id); setDetections(imp.getDetections()); },
-                    onEditNotes: (r, notes) => { imp.setSetNotes(r.id, notes); setDetections(imp.getDetections()); },
-                    sessionStartMs: imp.dateOverride ? Date.parse(imp.dateOverride) : undefined,
-                    details,
-                    study,
-                  }}
-                >
-                  {children}
-                </TunesetDetectionCard>
-              )}
+              renderSet={renderSet}
               onSetOpens={editing ? (id, opens) => { imp.setOpensSet(id, opens); setDetections(imp.getDetections()); } : undefined}
             />
           );

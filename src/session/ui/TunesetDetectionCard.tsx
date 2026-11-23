@@ -59,6 +59,11 @@ export interface TunesetCardOptions {
   details?: boolean;
   /** The review row. Default true; the analysis's "Study" switch. */
   study?: boolean;
+  /** In the Focus view, which holds one of its tunes at a time: where that
+   *  one stands in the set, said in the pill — "Set 3/5" (2026-11-23, the
+   *  user: the count says it, not the tunes' names, which a set of one tune
+   *  played five times shows as five times the same). */
+  position?: { at: number; of: number };
 }
 
 /** A live or import feed's list: tunes alone and sets. The sets are the
@@ -140,6 +145,7 @@ export function TunesetDetectionCard({ chain, opts, children }: {
 
   const playId = chainPlayId(chain);
   const playing = !!opts.onPlay && !!opts.playing;
+  const rank = opts.position && <span class="tabular-nums">{opts.position.at}/{opts.position.of}</span>;
 
   const reviewId = opts.record ? setReviewId(opts.session.id, opts.record.id) : null;
   const reviewTs = opts.sessionStartMs !== undefined && !open ? reviewEntryTs(opts.sessionStartMs, span.end) : null;
@@ -179,8 +185,8 @@ export function TunesetDetectionCard({ chain, opts, children }: {
         />
 
         {/* No name (2026-10-30, the user's call): its tunes, just below, say
-            it already, each on its own card. Only the Focus view, which shows
-            one tune at a time, names the set (FocusView.tsx). */}
+            it already, each on its own card. In the Focus view, one tune at a
+            time: where it stands, in the pill (`position`). */}
         <span class="flex-1" />
 
         {/* Where a tune shows how sure the recogniser is: a set is not one of
@@ -195,13 +201,13 @@ export function TunesetDetectionCard({ chain, opts, children }: {
           >
             <span class="text-2xs px-1.5 py-0.5 rounded-full inline-flex items-center gap-1 border border-border text-muted group-hover:text-accent group-hover:border-accent/50 transition-colors">
               <TuneSetIcon size={12} />
-              {t('sessions.set.label')}
+              {t('sessions.set.label')}{rank}
             </span>
           </button>
         ) : (
           <span class="text-2xs px-1.5 py-0.5 rounded-full shrink-0 inline-flex items-center gap-1 border border-border text-muted" title={name}>
             <TuneSetIcon size={12} />
-            {t('sessions.set.label')}
+            {t('sessions.set.label')}{rank}
           </span>
         )}
 

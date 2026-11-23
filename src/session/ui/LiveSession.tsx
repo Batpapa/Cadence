@@ -1,3 +1,4 @@
+import type { ComponentChild } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import type { AppContext } from '../../types';
@@ -332,6 +333,32 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
           // The sets as they form: readable and playable-as-a-score only — the
           // feed keeps no table, so nothing that needs the set's identity.
           const feed = feedItems(annotations);
+          // The table only when there is a set to show: never asked, nothing
+          // is saved with the analysis (the sets off).
+          const table = feed.items.some(x => x.kind === 'chain') ? live.getTunesets() : [];
+          // The list's sets and the Focus view's, one card.
+          const renderSet = (chain: Detection[], children: ComponentChild, position?: { at: number; of: number }) => (
+            <TunesetDetectionCard
+              key={`set-${chain[0]!.id}`}
+              chain={chain}
+              opts={{
+                ctx,
+                session: { id: live.sessionId, name: '', date: null, duration: feed.duration },
+                onOpenCard,
+                getPinnedDeckIds: () => live.pinnedDeckIds,
+                onChanged: () => setDetections(live.getDetections()),
+                record: recordOf(table, chain),
+                onToggleLike: (r) => { live.toggleSetLike(r.id); setDetections(live.getDetections()); },
+                onEditNotes: (r, notes) => { live.setSetNotes(r.id, notes); setDetections(live.getDetections()); },
+                sessionStartMs: live.startedAt || undefined,
+                details,
+                study,
+                position,
+              }}
+            >
+              {children}
+            </TunesetDetectionCard>
+          );
           if (showsFocus(view)) {
             return (
               <FocusView
@@ -339,39 +366,17 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
                 spot={focus.spot}
                 chains={feedChains(feed)}
                 renderCard={(ann, note) => <DetectionCard key={ann.id} ann={ann} opts={{ ...cardOpts, focus: true, focusNote: note }} />}
+                renderSet={renderSet}
                 onGo={focus.onGo}
                 feed={{ kind: 'live', latest: focus.latest, onBack: focus.onBack }}
               />
             );
           }
-          // The table only when there is a set to show: never asked, nothing
-          // is saved with the analysis (the sets off).
-          const table = feed.items.some(x => x.kind === 'chain') ? live.getTunesets() : [];
           return (
             <FeedList
               feed={feed}
               renderAnn={ann => <DetectionCard key={ann.id} ann={ann} opts={cardOpts} />}
-              renderSet={(chain, children) => (
-                <TunesetDetectionCard
-                  key={`set-${chain[0]!.id}`}
-                  chain={chain}
-                  opts={{
-                    ctx,
-                    session: { id: live.sessionId, name: '', date: null, duration: feed.duration },
-                    onOpenCard,
-                    getPinnedDeckIds: () => live.pinnedDeckIds,
-                    onChanged: () => setDetections(live.getDetections()),
-                    record: recordOf(table, chain),
-                    onToggleLike: (r) => { live.toggleSetLike(r.id); setDetections(live.getDetections()); },
-                    onEditNotes: (r, notes) => { live.setSetNotes(r.id, notes); setDetections(live.getDetections()); },
-                    sessionStartMs: live.startedAt || undefined,
-                    details,
-                    study,
-                  }}
-                >
-                  {children}
-                </TunesetDetectionCard>
-              )}
+              renderSet={renderSet}
               onSetOpens={editing ? (id, opens) => { live.setOpensSet(id, opens); setDetections(live.getDetections()); } : undefined}
             />
           );

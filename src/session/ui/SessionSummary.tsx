@@ -1701,6 +1701,9 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
               spot={focusSpot}
               chains={setsOn ? chainsOf(session.annotations, session.duration) : []}
               renderCard={(ann, note) => <DetectionCard key={ann.id} ann={ann} opts={{ ...cardOptsFor(ann, session.annotations.indexOf(ann)), focus: true, focusNote: note }} />}
+              renderSet={(chain, card, position) => (
+                <TunesetDetectionCard key={`set-${chain[0]!.id}`} chain={chain} opts={{ ...setOptsFor(chain), position }}>{card}</TunesetDetectionCard>
+              )}
               onGo={focusGo}
             />
           ) : (setsOn

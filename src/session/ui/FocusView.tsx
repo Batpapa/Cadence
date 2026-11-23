@@ -1,8 +1,8 @@
-import type { ComponentChild } from 'preact';
+import type { ComponentChild, RefObject } from 'preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import { anyOverlayOpen } from '../../components/overlayStack';
-import { ArrowLeftIcon, ArrowRightIcon, SkipToEndIcon, TuneSetIcon } from '../../components/icons';
+import { ArrowLeftIcon, ArrowRightIcon, SkipToEndIcon } from '../../components/icons';
 import { EmptyState } from '../../components/ui';
 import type { Detection } from '../model';
 import { fmtLongTime, tuneName } from './sessionUiShared';
@@ -25,8 +25,8 @@ import type { ListGap } from './timelineModel';
 // rather than a "nothing detected" — the user's call: what was just played is
 // what one wants to rate, as long as it is clear that it is behind us.
 //
-// The set the tune belongs to, if any, is named above it, its tunes in order
-// and each one a way to it.
+// The set the tune belongs to, if any, holds its card, as in the lists — the
+// set's rank of this tune in its pill.
 //
 // The card is the screen's own <DetectionCard>, with its `focus` option: one
 // card, whatever its size, so nothing it does can differ from the list's.
@@ -83,13 +83,16 @@ const NAV_PAD = 2 * 12 + 2;
 const NAV_ICON = 20;
 const NAV_GAP = 8;
 const NAV_DOT = 10;
+/** The least of a tune's name worth showing beside its arrow: a word or so
+ *  and the ellipsis. Narrower, the arrow goes alone. */
+const NAV_NAME_MIN = 56;
 
 /** How much the row spells out, as it narrows (the user's order): everything;
- *  then the arrows without their words; then "Live" for "Back to live".
+ *  then the arrows without their names; then "Live" for "Back to live".
  *  Never the dot alone — a lone red dot reads as the recording's own switch. */
 type NavWords = 'all' | 'bare' | 'short';
 
-/** One way the arrows can go: what it does, and what it names on hover. */
+/** One way the arrows can go: what it does, and the tune it goes to. */
 interface NavStep { go: () => void; title?: string }
 
 /** The keyboard's ← and → doing `prev` and `next`. One place on screen at a
@@ -125,31 +128,32 @@ export function useArrowKeys(on: boolean, prev: (() => void) | undefined, next: 
  *  succession, they moved under the finger while they sat under the card, as
  *  names wrapped and sets came and went above them. On top, nothing of the
  *  view is above them, and the row itself never changes: one line, the same
- *  three (or two) columns whatever the state. "Previous detection" and "Next
- *  detection", no tune names: the card right below says where one is (the
- *  user's call). "Detection" since the analyses' row came above it, worded
- *  "analysis" (2026-11-23, the user).
+ *  three (or two) columns whatever the state.
  *
- *  The same row stepped from analysis to analysis at the top of an analysis
- *  for an hour (2026-11-23) — "énormément de place", the user: those went
- *  onto the folder's line as two chevrons (AnalysisNav). The words and where
- *  they go are still the caller's.
+ *  Each arrow names the tune it goes to, cut short to its half — as the
+ *  analyses' line names the analysis (AnalysisNav): the two ways of stepping
+ *  then read alike (2026-11-23, the user, trying it out; until then "Previous"
+ *  and "Next", the card saying where one is). And drawn plain, no box: a 48 px
+ *  target still — a phone put down at a session is tapped without aiming —
+ *  but the card below is what the screen is about, not the way past it. At
+ *  either end, the arrow alone, greyed.
  *
  *  On a feed, the way back to the latest sits between them (the user's pick
  *  over a floating button, which covered the rating buttons): "Back to live"
  *  with the REC dot on a live recording, the skip-to-end arrow on an import.
  *  It is always there — greyed when already on the latest — so that its
- *  coming and going never shifts the arrows.
+ *  coming and going never shifts the arrows. It keeps its box: it is a
+ *  state as much as a way.
  *
- *  The words give way as the row narrows (NavWords), measured: the words'
- *  natural widths (invisible twins below) against the row's, for each stage
- *  in turn, never from what is on screen — so the answer cannot flip back and
- *  forth. Both arrows lose their words together, as soon as either would be
- *  cut. The words stay as each button's accessible name. */
+ *  The names give way as the row narrows (NavWords), measured: a name's
+ *  least useful width against each arrow's room, for each stage in turn,
+ *  never from what is on screen — so the answer cannot flip back and forth.
+ *  The way and the name stay each button's accessible name. */
 function NavArrows({ prev, next, prevLabel, nextLabel, feed, keys }: {
   /** Absent: greyed, there is nothing that way. */
   prev?: NavStep;
   next?: NavStep;
+  /** Which way, for a screen reader and the tooltip, before the name. */
   prevLabel: string;
   nextLabel: string;
   feed?: FocusFeed;
@@ -159,8 +163,6 @@ function NavArrows({ prev, next, prevLabel, nextLabel, feed, keys }: {
   useArrowKeys(!!keys, prev?.go, next?.go);
 
   const rowRef = useRef<HTMLDivElement>(null);
-  const prevWordRef = useRef<HTMLSpanElement>(null);
-  const nextWordRef = useRef<HTMLSpanElement>(null);
   const longLiveRef = useRef<HTMLSpanElement>(null);
   const shortLiveRef = useRef<HTMLSpanElement>(null);
   const [words, setWords] = useState<NavWords>('all');
@@ -168,9 +170,7 @@ function NavArrows({ prev, next, prevLabel, nextLabel, feed, keys }: {
   const kind = feed?.kind;
   useLayoutEffect(() => {
     const row = rowRef.current;
-    const prevWord = prevWordRef.current;
-    const nextWord = nextWordRef.current;
-    if (!row || !prevWord || !nextWord) return;
+    if (!row) return;
     const measure = () => {
       /** The middle button's width with this word, or with its icon. */
       const middle = (word: HTMLElement | null) => kind === 'live' ? NAV_PAD + NAV_DOT + NAV_GAP + (word?.offsetWidth ?? 0)
@@ -179,37 +179,38 @@ function NavArrows({ prev, next, prevLabel, nextLabel, feed, keys }: {
       const gaps = (kind ? 2 : 1) * NAV_GAP;
       /** Each arrow's room, the middle at this width. */
       const room = (mid: number) => (row.clientWidth - gaps - mid) / 2;
-      const worded = NAV_PAD + NAV_ICON + NAV_GAP + Math.max(prevWord.offsetWidth, nextWord.offsetWidth) + 1;
+      const named = NAV_PAD + NAV_ICON + NAV_GAP + NAV_NAME_MIN;
       const bare = NAV_PAD + NAV_ICON + 1;
       const longMid = middle(longLiveRef.current);
-      setWords(worded <= room(longMid) ? 'all'
+      setWords(named <= room(longMid) ? 'all'
         : kind !== 'live' || bare <= room(longMid) ? 'bare'
         : 'short');
     };
     measure();
     const ro = new ResizeObserver(measure);
-    for (const el of [row, prevWord, nextWord, longLiveRef.current, shortLiveRef.current]) if (el) ro.observe(el);
+    for (const el of [row, longLiveRef.current, shortLiveRef.current]) if (el) ro.observe(el);
     return () => ro.disconnect();
   }, [kind]);
 
-  const box = 'h-12 px-3 rounded-md border border-border bg-bg flex items-center gap-2 text-sm font-medium transition-colors';
-  const usable = (on: boolean) => on ? 'cursor-pointer text-primary hover:border-accent/60 hover:bg-accent/5' : 'text-primary opacity-40 cursor-default';
+  const box = 'h-12 px-3 rounded-md border flex items-center gap-2 text-sm transition-colors';
   const longLive = t('sessions.focus.backToLive');
   const shortLive = t('sessions.focus.live');
 
   /** One of the two arrows, its content against its outer edge. */
   const arrow = (target: NavStep | undefined, dir: 'prev' | 'next') => {
-    const label = dir === 'prev' ? prevLabel : nextLabel;
+    const way = dir === 'prev' ? prevLabel : nextLabel;
+    const label = target?.title ? `${way} · ${target.title}` : way;
     return (
       <button
-        class={`${box} min-w-0 justify-start ${dir === 'next' ? 'flex-row-reverse' : ''} ${usable(!!target)}`}
+        class={`${box} border-transparent min-w-0 justify-start ${dir === 'next' ? 'flex-row-reverse' : ''} ${
+          target ? 'cursor-pointer text-muted hover:text-accent hover:bg-accent/5' : 'text-dim opacity-40 cursor-default'}`}
         disabled={!target}
         aria-label={label}
-        title={target?.title}
+        title={label}
         onClick={() => target?.go()}
       >
         <span class="shrink-0 flex items-center">{dir === 'prev' ? <ArrowLeftIcon size={20} /> : <ArrowRightIcon size={20} />}</span>
-        {words === 'all' && <span class="whitespace-nowrap">{label}</span>}
+        {words === 'all' && target?.title && <span class="truncate">{target.title}</span>}
       </button>
     );
   };
@@ -219,7 +220,7 @@ function NavArrows({ prev, next, prevLabel, nextLabel, feed, keys }: {
     const label = f.kind === 'live' ? longLive : t('sessions.focus.toLatest');
     return (
       <button
-        class={`${box} justify-center ${usable(!f.latest)}`}
+        class={`${box} border-border bg-bg font-medium justify-center ${f.latest ? 'text-primary opacity-40 cursor-default' : 'cursor-pointer text-primary hover:border-accent/60 hover:bg-accent/5'}`}
         disabled={f.latest}
         title={label}
         aria-label={label}
@@ -244,10 +245,8 @@ function NavArrows({ prev, next, prevLabel, nextLabel, feed, keys }: {
         {feed && back(feed)}
         {arrow(next, 'next')}
       </div>
-      {/* The words laid out on one line, out of sight: what is measured. */}
+      {/* The live words laid out on one line, out of sight: what is measured. */}
       <span class="absolute w-0 h-0 overflow-hidden invisible pointer-events-none" aria-hidden="true">
-        <span ref={prevWordRef} class="block w-max whitespace-nowrap text-sm font-medium">{prevLabel}</span>
-        <span ref={nextWordRef} class="block w-max whitespace-nowrap text-sm font-medium">{nextLabel}</span>
         {kind === 'live' && <span ref={longLiveRef} class="block w-max whitespace-nowrap text-sm font-medium">{longLive}</span>}
         {kind === 'live' && <span ref={shortLiveRef} class="block w-max whitespace-nowrap text-sm font-medium">{shortLive}</span>}
       </span>
@@ -266,7 +265,7 @@ function FocusNav({ anns, spot, onGo, feed }: {
   feed?: FocusFeed;
 }) {
   const { prev, next } = neighboursOf(anns, spot);
-  const step = (ann: Detection | undefined): NavStep | undefined => ann && { go: () => onGo(ann) };
+  const step = (ann: Detection | undefined): NavStep | undefined => ann && { go: () => onGo(ann), title: tuneName(ann).text };
   return (
     <NavArrows
       prev={step(prev)}
@@ -283,7 +282,7 @@ function FocusNav({ anns, spot, onGo, feed }: {
  *  detection is the one shown, and the way back to it. */
 type FocusFeed = { kind: 'live' | 'import'; latest: boolean; onBack: () => void };
 
-export function FocusView({ anns, spot, chains, renderCard, onGo, feed }: {
+export function FocusView({ anns, spot, chains, renderCard, renderSet, onGo, feed }: {
   /** The analysis's detections, in playing order. */
   anns: Detection[];
   spot: FocusSpot;
@@ -291,7 +290,10 @@ export function FocusView({ anns, spot, chains, renderCard, onGo, feed }: {
   chains: Detection[][];
   /** The card, drawn large; `note` goes under its name. */
   renderCard: (ann: Detection, note: ComponentChild) => ComponentChild;
-  /** The arrows and the set's names: go to that tune. */
+  /** The set the shown tune belongs to, round its card — the screen's own
+   *  set card, as in its list; `position` for its pill. */
+  renderSet: (chain: Detection[], card: ComponentChild, position: { at: number; of: number }) => ComponentChild;
+  /** The arrows: go to that tune. */
   onGo: (ann: Detection) => void;
   /** On a live or import feed: whether the latest detection is the one shown,
    *  and the way back to it. */
@@ -299,48 +301,30 @@ export function FocusView({ anns, spot, chains, renderCard, onGo, feed }: {
 }) {
   const shown = shownOf(anns, spot);
   const chain = shown ? chains.find(c => c.some(d => d.id === shown.id)) : undefined;
+  /** In a set, the card inside the set's own, as the lists nest them — its
+   *  play, score, deck, heart and notes (2026-11-23, the user). The set was
+   *  a line of its tunes' names above the card before, which came and went
+   *  and wrapped, moving the card at every tune. */
+  const withSet = (card: ComponentChild) => chain && shown
+    ? renderSet(chain, card, { at: chain.indexOf(shown) + 1, of: chain.length })
+    : card;
+  const { outerRef, innerRef } = useHighWater(anns.length > 0);
 
   if (anns.length === 0) {
     return <EmptyState class="py-10">{t('sessions.focus.empty')}</EmptyState>;
   }
 
   return (
-    <div class="space-y-3">
+    <div ref={outerRef}>
+    <div ref={innerRef} class="space-y-3">
       <FocusNav anns={anns} spot={spot} onGo={onGo} feed={feed} />
-
-      {/* Its tunes as the set's own name spells them — " / " between them
-          (TUNESET_NAME_SEPARATOR), the user's call — wrapping in a column of
-          their own, the "Set" pill alone at the right. Every line of names
-          and the pill are all 32 px tall, the other tunes' buttons' target:
-          the pill, at the top, then sits level with the first line rather
-          than 5 px above it (2026-11-23, the user). */}
-      {chain && (
-        <div class="flex items-start gap-3 text-xs text-muted">
-          <div class="flex-1 min-w-0 flex items-center gap-x-1.5 gap-y-1 flex-wrap">
-            {chain.map((d, k) => (
-              <span key={d.id} class="inline-flex items-center gap-1.5 min-w-0 min-h-8">
-                {k > 0 && <span class="text-dim">/</span>}
-                {d.id === shown!.id
-                  ? <span class="font-semibold text-primary">{tuneName(d).text}</span>
-                  : <button class="min-h-8 cursor-pointer hover:text-accent hover:underline transition-colors" onClick={() => onGo(d)}>{tuneName(d).text}</button>}
-              </span>
-            ))}
-          </div>
-          <span class="shrink-0 min-h-8 flex items-center">
-            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-border">
-              <TuneSetIcon size={12} />
-              {t('sessions.set.label')}
-            </span>
-          </span>
-        </div>
-      )}
 
       {/* The one status worth a word: over, and the latest heard — what
           "playing" would say, the card's pulsing dot already does (the
           user's call). Under the name, in the card. */}
-      {shown ? renderCard(shown, shown.end !== null && feed?.latest ? (
+      {shown ? withSet(renderCard(shown, shown.end !== null && feed?.latest ? (
         <span class="inline-flex px-2 py-0.5 rounded-full bg-elevated text-xs text-muted font-medium">{t('sessions.focus.ended')}</span>
-      ) : undefined) : spot?.kind === 'gap' ? (
+      ) : undefined)) : spot?.kind === 'gap' ? (
         // A silence the play head stands in — said as the list says it.
         <div class="p-6 rounded-xl border border-dashed border-border text-center space-y-1">
           <p class="text-lg text-muted">{t('sessions.gap', { d: fmtLongTime(spot.gap.len) })}</p>
@@ -351,5 +335,49 @@ export function FocusView({ anns, spot, chains, renderCard, onGo, feed }: {
       ) : null}
 
     </div>
+    </div>
   );
+}
+
+/** Wider than this, a change of width is the screen's — a phone turned, a
+ *  window resized — and the heights seen are no longer this layout's. Under
+ *  it, the scroll bar the kept height itself brings or takes away: reacting
+ *  to that would take the height away, the bar with it, and round again
+ *  (feedback: a measured layout can loop). */
+const HIGH_WATER_RESET_PX = 40;
+
+/** The Focus view never gets shorter than it has been (2026-11-23, the
+ *  user): a shorter card after a long one shortened the page, the browser
+ *  pulled a page scrolled down back up, and the arrows moved under the finger
+ *  tapping through. The tallest the view has been is kept as its least height
+ *  — on the outer box, while the inner one is measured, so the kept height
+ *  never feeds back into what is measured. Until the view goes (another view,
+ *  another analysis) or the screen's width changes.
+ *
+ *  Direct style writes: a height that only grows is nothing to re-render. */
+function useHighWater(on: boolean): { outerRef: RefObject<HTMLDivElement>; innerRef: RefObject<HTMLDivElement> } {
+  const outerRef = useRef<HTMLDivElement>(null);
+  const innerRef = useRef<HTMLDivElement>(null);
+  // Once, while the boxes are there — not at each render, which would forget
+  // the height kept.
+  useLayoutEffect(() => {
+    const outer = outerRef.current, inner = innerRef.current;
+    if (!on || !outer || !inner) return;
+    let high = 0;
+    let width = outer.clientWidth;
+    const measure = () => {
+      const w = outer.clientWidth;
+      if (Math.abs(w - width) > HIGH_WATER_RESET_PX) { width = w; high = 0; }
+      const h = inner.offsetHeight;
+      if (h <= high) return;
+      high = h;
+      outer.style.minHeight = `${h}px`;
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(inner);
+    ro.observe(outer);
+    return () => ro.disconnect();
+  }, [on]);
+  return { outerRef, innerRef };
 }
