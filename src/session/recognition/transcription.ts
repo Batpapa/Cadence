@@ -169,6 +169,9 @@ export interface GridNote {
   /** Quavers it actually sounds: a note followed by a silence of a crotchet or more
    *  sounds for less than it lasts (a rest is written after it). */
   sounds: number;
+  /** With the next note, a broken pair: '>' this one dotted and the next a semiquaver
+   *  ("B>c"), '<' the other way round. Both are quavers on the grid. */
+  broken?: '>' | '<';
 }
 
 /** How far from its nearest grid point a note may be put, in grid steps. */
@@ -269,6 +272,55 @@ function splitRepeats(notes: GridNote[], grid: number[], novelty: ArrayLike<numb
       }
     }
     out.push({ pitch: n.pitch, at: from, quavers: end - from, sounds: Math.max(1, n.sounds - (from - n.at)) });
+  }
+  return out;
+}
+
+// ── Broken rhythm ────────────────────────────────────────────────────────────
+// A dotted pair ("B>c") sits on the quaver grid as two quavers; where the second one's onset
+// really falls tells it. r: how far it is from the first onset to the third (the next
+// quaver's), 0.5 even, 2/3 the swing of a reel, 3/4 a dotted pair. Written only where r
+// stands out of the recording's own spread of r — in a session it never does: onsets of a
+// group are loose, and people do not dot where the settings do (any fixed threshold lost
+// against TheSession, even on 45 polkas, hornpipes and strathspeys) — and in a binary metre
+// (a jig's lilt is no broken rhythm: 12 false pairs in a solo jig without this), and only
+// once the spread is known (BROKEN_PAIRS). Measured: sessions and dotted dances unchanged
+// (0.06 and 0.18 % of the notes dotted); the user's solo recording, its 6 dotted pairs and
+// no other; classical flute scales (none to find), 1 false pair in 2245 notes.
+
+/** The least r of a dotted pair (1 - it: the other way round). */
+const BROKEN_MIN = 0.66;
+/** How far out of the recording's spread of r: robust standard deviations from its median. */
+const BROKEN_SPREAD = 4;
+/** Pairs needed to know a recording's spread. */
+const BROKEN_PAIRS = 8;
+
+/** `notes` with their broken pairs marked; `onsets`: the heard onset frame of the notes at
+ *  each grid index (a note split off a repeated one starts on its grid point). */
+function brokenPairs(notes: GridNote[], onsets: Map<number, number>, bars: boolean[], grid: number[], metre: Metre): GridNote[] {
+  if (metre !== '4/4') return notes;
+  const onset = (n: GridNote): number => onsets.get(n.at) ?? grid[n.at]!;
+  // r of each pair a, b of quavers in a bar, c on the next quaver
+  const ratio = notes.map((a, i): number | null => {
+    const b = notes[i + 1], c = notes[i + 2];
+    if (!b || !c || a.quavers !== 1 || b.quavers !== 1 || a.sounds !== 1 || b.sounds !== 1) return null;
+    if (b.at !== a.at + 1 || c.at !== a.at + 2 || bars[b.at]) return null;
+    const r = (onset(b) - onset(a)) / (onset(c) - onset(a));
+    return Number.isFinite(r) ? r : null;
+  });
+  const rs = ratio.filter((r): r is number => r !== null).sort((x, y) => x - y);
+  if (rs.length < BROKEN_PAIRS) return notes;
+  const median = rs[rs.length >> 1]!;
+  const deviations = rs.map(r => Math.abs(r - median)).sort((x, y) => x - y);
+  const spread = 1.4826 * deviations[deviations.length >> 1]!;
+  const high = Math.max(BROKEN_MIN, median + BROKEN_SPREAD * spread);
+  const low = Math.min(1 - BROKEN_MIN, median - BROKEN_SPREAD * spread);
+  const out = notes.map(n => ({ ...n }));
+  for (let i = 0; i < out.length; i++) {
+    const r = ratio[i];
+    if (r === null || r === undefined || (r < high && r > low)) continue;
+    out[i]!.broken = r >= high ? '>' : '<';
+    i++; // the next note is the pair's second
   }
   return out;
 }
@@ -424,7 +476,9 @@ export function transcribe(classes: ArrayLike<number>, novelty: ArrayLike<number
   const last = placed[placed.length - 1]!;
   // the bars from the notes as heard (measured so), before the repeated notes are split
   const bars = barStarts(placed, last.at + last.quavers, frameOf, novelty, metre);
-  return { notes: splitRepeats(placed, frameOf, novelty, features), bars, grid: frameOf, metre, rate };
+  const onsets = new Map(placed.map((n, i) => [n.at, heard[i]!.start]));
+  const notes = brokenPairs(splitRepeats(placed, frameOf, novelty, features), onsets, bars, frameOf, metre);
+  return { notes, bars, grid: frameOf, metre, rate };
 }
 
 /** One MIDI pitch a quaver, rests left out: what FolkFriend's key detection reads. */
@@ -510,13 +564,13 @@ const MIN_REST = 2;
  *  and T:). */
 export function writeAbc(t: Transcription, key: Key): string {
   // notes and rests (pitch null), each from grid position `at`
-  const events: { pitch: number | null; at: number; len: number }[] = [];
+  const events: { pitch: number | null; at: number; len: number; broken?: '>' | '<' }[] = [];
   for (const n of t.notes) {
     const rest = n.quavers - n.sounds;
     if (rest >= MIN_REST) {
       events.push({ pitch: n.pitch, at: n.at, len: n.sounds });
       events.push({ pitch: null, at: n.at + n.sounds, len: rest });
-    } else events.push({ pitch: n.pitch, at: n.at, len: n.quavers });
+    } else events.push({ pitch: n.pitch, at: n.at, len: n.quavers, broken: n.broken });
   }
   const isBar = (k: number) => t.bars[k] === true;
   let out = '';
@@ -559,6 +613,7 @@ export function writeAbc(t: Transcription, key: Key): string {
         out += abcPitch(letter, alt, e.pitch);
       }
       if (len > 1) out += String(len);
+      if (e.broken) out += e.broken;
       at += len;
       left -= len;
       inBar += len;

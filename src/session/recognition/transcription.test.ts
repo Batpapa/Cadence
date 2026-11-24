@@ -12,7 +12,8 @@ const flat = (notes: ClassNote[]): Float32Array =>
 const note = (cls: number, start: number, octaves: number[], frames = 6, power = 0.5): ClassNote =>
   ({ cls, start, frames, power, octaves });
 
-/** What abcjs plays of `abc`: [MIDI pitch, length in quavers] per sounding note, ties joined. */
+/** What abcjs plays of `abc`: [MIDI pitch, length in quavers, to the semiquaver] per
+ *  sounding note, ties joined. */
 function played(abc: string): [number, number][] {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const tune = abcjs.parseOnly(`X: 1\nT: t\n${abc}`)[0] as any;
@@ -20,7 +21,7 @@ function played(abc: string): [number, number][] {
   const quaver = 0.125; // abcjs counts in whole notes
   return tune.setUpAudio({}).tracks.flat()
     .filter((e: { cmd: string }) => e.cmd === 'note')
-    .map((e: { pitch: number; duration: number }) => [e.pitch, Math.round(e.duration / quaver)]);
+    .map((e: { pitch: number; duration: number }) => [e.pitch, Math.round(2 * e.duration / quaver) / 2]);
 }
 
 describe('classNotes', () => {
@@ -113,6 +114,42 @@ describe('transcribe', () => {
     expect(t.notes.map(n => n.at - t.notes[0]!.at)).toEqual([0, 1, 2, 3, 4, 5]);
   });
 
+  /** 160 quavers of even pairs, bars of `bar` accented, `dotted` quavers (odd: a pair's
+   *  second) late by half a quaver. */
+  function pairs(dotted: number[], bar = 8) {
+    const N = 160, frames = 5 + N * P + 20;
+    const pitches = [69, 71, 72, 74, 76, 74, 72, 71];
+    const notes: [number, number, number][] = [];
+    for (let k = 0; k < N; k++) {
+      const start = 5 + k * P + (dotted.includes(k) ? P / 2 : 0);
+      const next = 5 + (k + 1) * P + (dotted.includes(k + 1) ? P / 2 : 0);
+      notes.push([pitches[k % pitches.length]!, start, next - start]);
+    }
+    const classes = flat(notes.map(([pitch, start, length]) => {
+      const octaves = [0, 0, 0, 0];
+      octaves[Math.floor((pitch - 48) / 12)] = 1;
+      return note((pitch - 48) % 12, start, octaves, length);
+    }));
+    const novelty = new Float32Array(frames);
+    for (let k = 0; k < N; k++) novelty[5 + k * P] = k % bar === 0 ? 3 : k % (bar / 2) === 0 && bar % 2 === 0 ? 2 : 1;
+    const features = new Float32Array(frames * 48);
+    for (const [pitch, start, length] of notes) for (let f = start; f < start + length; f++) features[f * 48 + pitch - 48] = 1;
+    return transcribe(classes, novelty, features, FPS, RATE)!;
+  }
+
+  it('hears a dotted pair where the second note comes late, in a steady recording', () => {
+    const t = pairs([17, 41]);
+    expect(t.metre).toBe('4/4');
+    const broken = t.notes.filter(n => n.broken);
+    expect(broken.map(n => [n.pitch, n.broken])).toEqual([[69, '>'], [69, '>']]);
+  });
+
+  it('writes no dotted pair in a jig', () => {
+    const t = pairs([17, 41], 6);
+    expect(t.metre).toBe('6/8');
+    expect(t.notes.some(n => n.broken)).toBe(false);
+  });
+
   it('splits a re-attacked note, not one whose sound has stopped', () => {
     // F# held 4 quavers by the decoder, an accent on its last quaver
     const notes = (sounds: number): [number, number, number, number?][] =>
@@ -198,6 +235,15 @@ describe('writeAbc', () => {
     expect(abc).toContain('M:6/8');
     expect(abc).toContain('Q:3/8=140');
     expect(abc.split('\n').pop()).toBe('D | G3 B3 | d6 |]');
+  });
+
+  it('writes broken pairs, played dotted', () => {
+    const t = tune([[71, 1], [72, 1], [74, 1], [71, 1], [72, 1], [71, 1], [69, 2]], 8);
+    t.notes[0]!.broken = '>';
+    t.notes[4]!.broken = '<';
+    const abc = writeAbc(t, makeKey(9, 'min'));
+    expect(abc.split('\n').pop()).toBe('B>cdB c<B A2 |]');
+    expect(played(abc)).toEqual([[71, 1.5], [72, 0.5], [74, 1], [71, 1], [72, 0.5], [71, 1.5], [69, 2]]);
   });
 
   it('writes a silence of a crotchet or more as a rest', () => {
