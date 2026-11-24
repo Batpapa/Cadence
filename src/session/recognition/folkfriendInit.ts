@@ -30,7 +30,7 @@ const WASM_SIMD_TEST = new Uint8Array([
   10, 9, 1, 7, 0, 65, 0, 253, 15, 26, 11, // code: i32.const 0; i8x16.splat; drop; end
 ]);
 
-function supportsSimd(): boolean {
+export function supportsSimd(): boolean {
   try {
     return WebAssembly.validate(WASM_SIMD_TEST);
   } catch {

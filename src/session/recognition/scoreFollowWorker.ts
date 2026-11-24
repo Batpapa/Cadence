@@ -6,6 +6,8 @@ import { getSettingContour } from './indexStore';
 import { FF_PCM_WINDOW } from '../sessionConfig';
 import { Novelty, estimateRate } from '../liveTempo';
 import { transcribe, quaverContour, keyOfAbc, makeKey, writeAbc } from './transcription';
+import { hear, gridNovelty, asClassNotes, resample, RATE } from './transcriptor';
+import { initTranscriptor } from './transcriptorInit';
 
 // ── Score following worker ───────────────────────────────────────────────────
 // All of the work, off the main thread — which is playing the recording and
@@ -362,6 +364,7 @@ const CONTOUR_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV';
  *  when no tune was heard. */
 async function writeOut(pcm: Float32Array, rate: number, onRatio: (r: number) => void): Promise<string | null> {
   await engine(); // the module's init
+  await initTranscriptor(); // the notes' analysis in WebAssembly (else in TypeScript)
   const f = new FolkFriendWASM();
   try {
     f.set_sample_rate(rate);
@@ -371,17 +374,22 @@ async function writeOut(pcm: Float32Array, rate: number, onRatio: (r: number) =>
     for (let i = 0; i < n; i++) {
       f.get_allocated_pcm_window(at).set(pcm.subarray(i * FF_PCM_WINDOW, (i + 1) * FF_PCM_WINDOW));
       f.feed_single_pcm_window(at);
-      if ((i & 255) === 0) onRatio((0.6 * i) / n);
+      if ((i & 255) === 0) onRatio((0.25 * i) / n);
     }
+    // FolkFriend's 48-note energies for the tempo, the metre and the key; the notes, and an
+    // onset function for the grid, from the transcription's own decoder (transcriptor.ts:
+    // onsets every 5 ms, pitch read over whole notes — cadence-transcriptor's JOURNAL.md has
+    // every measurement)
     const features = f.take_magnitude_features();
-    onRatio(0.7);
-    const classes = f.transcribe_notes();
-    onRatio(0.95);
+    onRatio(0.3);
     const fps = rate / FF_PCM_WINDOW;
+    const heard = hear(pcm, rate, r => onRatio(0.3 + 0.65 * r));
+    const classes = asClassNotes(heard.notes, fps);
+    onRatio(0.95);
     const novelty = new Novelty().of(features);
     const tempo = estimateRate(novelty, fps);
     if (!tempo) return null;
-    const tune = transcribe(classes, novelty, features, fps, tempo.rate);
+    const tune = transcribe(classes, gridNovelty(novelty, heard, FF_PCM_WINDOW), features, fps, tempo.rate, novelty);
     if (!tune) return null;
     const contour = quaverContour(tune).map(m => CONTOUR_CHARS[Math.min(95, Math.max(48, m)) - 48]).join('');
     const key = (contour.length ? keyOfAbc(f.contour_to_abc(contour)) : null) ?? makeKey(0, 'maj');
@@ -470,7 +478,8 @@ ctx.onmessage = (e) => {
         const d = await decodeSpan(msg.audio, 0, duration, r => progress('decode', r));
         if (!d) { ctx.postMessage({ type: 'failed', reason: 'no_audio' }); return; }
         progress('listen', 0);
-        const abc = await writeOut(d.pcm, d.rate, r => progress('listen', r));
+        // at the rate the transcription was measured at (transcriptor.ts's RATE)
+        const abc = await writeOut(resample(d.pcm, d.rate, RATE), RATE, r => progress('listen', r));
         if (!abc) { ctx.postMessage({ type: 'failed', reason: 'no_contour' }); return; }
         ctx.postMessage({ type: 'transcribed', abc });
         return;

@@ -57,12 +57,24 @@ describe('withOctaves', () => {
   });
 
   it('follows an octave leap the energy is sure of over several notes', () => {
-    // a leap costs 12 x 0.6: one note an octave off would cost less, three do not
+    // a leap costs 12 x 0.4: one note an octave off would cost less, three do not
     const out = withOctaves(classNotes(flat([
       note(2, 0, [0, 1, 0, 0]), note(4, 6, [0, 1, 0, 0]), note(2, 12, [0, 1, 0, 0]),
       note(2, 18, [0, 0, 1, 0]), note(4, 24, [0, 0, 1, 0]), note(2, 30, [0, 0, 1, 0]),
     ])));
     expect(out.map(n => n.pitch)).toEqual([62, 64, 62, 74, 76, 74]);
+  });
+
+  it('keeps a run heard louder an octave up in the register of the notes around it', () => {
+    // D E F# G A over and over, G A G A... heard mostly an octave up for 8 notes: worth its two
+    // leaps on energy alone, not against the register
+    const cls = [2, 4, 6, 7, 9];
+    const notes = Array.from({ length: 40 }, (_, k) => k >= 16 && k < 24
+      ? note([7, 9][k % 2]!, 6 * k, [0, 0.1, 0.9, 0])
+      : note(cls[k % 5]!, 6 * k, [0, 1, 0, 0]));
+    const out = withOctaves(classNotes(flat(notes)));
+    expect(out.slice(16, 24).map(n => n.pitch)).toEqual([67, 69, 67, 69, 67, 69, 67, 69]);
+    expect(out.every(n => n.pitch < 72)).toBe(true);
   });
 });
 
@@ -115,15 +127,16 @@ describe('transcribe', () => {
   });
 
   /** 160 quavers of even pairs, bars of `bar` accented, `dotted` quavers (odd: a pair's
-   *  second) late by half a quaver. */
-  function pairs(dotted: number[], bar = 8) {
-    const N = 160, frames = 5 + N * P + 20;
+   *  second) late by half a quaver; with `tail`, a last A on the next downbeat, a quaver of
+   *  it heard. */
+  function pairs(dotted: number[], bar = 8, tail = false) {
+    const N = 160 + (tail ? 1 : 0), frames = 5 + N * P + 20;
     const pitches = [69, 71, 72, 74, 76, 74, 72, 71];
     const notes: [number, number, number][] = [];
     for (let k = 0; k < N; k++) {
       const start = 5 + k * P + (dotted.includes(k) ? P / 2 : 0);
       const next = 5 + (k + 1) * P + (dotted.includes(k + 1) ? P / 2 : 0);
-      notes.push([pitches[k % pitches.length]!, start, next - start]);
+      notes.push([k >= 160 ? 69 : pitches[k % pitches.length]!, start, next - start]);
     }
     const classes = flat(notes.map(([pitch, start, length]) => {
       const octaves = [0, 0, 0, 0];
@@ -142,6 +155,12 @@ describe('transcribe', () => {
     expect(t.metre).toBe('4/4');
     const broken = t.notes.filter(n => n.broken);
     expect(broken.map(n => [n.pitch, n.broken])).toEqual([[69, '>'], [69, '>']]);
+  });
+
+  it('holds the last note to the end of its bar', () => {
+    const t = pairs([], 8, true);
+    const last = t.notes[t.notes.length - 1]!;
+    expect([last.pitch, last.quavers, last.sounds]).toEqual([69, 8, 8]);
   });
 
   it('writes no dotted pair in a jig', () => {

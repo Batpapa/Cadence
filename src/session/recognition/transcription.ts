@@ -1,17 +1,19 @@
 // ── A recording written out as ABC ───────────────────────────────────────────
-// The hidden transcription (2026-11-23, the user; transcribeRecording.tsx): the notes
-// FolkFriend's fork hears (FolkFriendWASM.transcribe_notes — the pitch-class decoder, each
-// note with the energy of every octave of its class), turned into a tune: octaves, quavers,
-// repeated notes, metre, bars, key, then the ABC text.
+// The hidden transcription (2026-11-23, the user; transcribeRecording.tsx): the notes the
+// transcription's own decoder hears (transcriptor.ts, from cadence-transcriptor — each note
+// a pitch class with the energy of each of its octaves, as FolkFriend's fork gave them until
+// 2026-11-24), turned into a tune: octaves, quavers, repeated notes, metre, bars, key, then
+// the ABC text.
 //
-// Every choice below was measured (research record outside the repo:
-// transcription-bench/JOURNAL.md). Judges: the tuneset corpus (Beauguitte, Duggan & Kelleher,
-// ISMIR 2016 — the only public Irish recordings annotated note by note: 13 session
-// recordings, 2 solo flutes), 180 tunes of Cadence's annotated sessions against their
-// TheSession settings (relative only: people do not play the setting), a classical flute
-// corpus as a control. On tuneset, note F-measure (onset 50 ms, exact pitch): this chain
-// 75.0 %, FolkFriend's 48-note transcription 65.9 %, Basic Pitch (NeuralNote's model) 55 %,
-// pYIN + Tony 27-43 %.
+// Every choice below was measured (research records outside the repo:
+// transcription-bench/JOURNAL.md, cadence-transcriptor/JOURNAL.md). Judges: the tuneset corpus
+// (Beauguitte, Duggan & Kelleher, ISMIR 2016 — the only public Irish recordings annotated note
+// by note: 13 session recordings, 2 solo flutes), 170 tunes of Cadence's annotated sessions
+// against their TheSession settings (relative only: people do not play the setting), a
+// classical flute corpus as a control, the user's solo recording and its truth. On tuneset,
+// note F-measure (onset 50 ms, exact pitch): this chain 83.6 % (75.0 with FolkFriend's notes),
+// FolkFriend's 48-note transcription 65.9 %, Basic Pitch (NeuralNote's model) 55 %, pYIN +
+// Tony 27-43 %.
 //
 // Self-contained on purpose, like liveTempo.ts: Node runs it as it is for the bench. The
 // worker hands it what the engines give (scoreFollowWorker.ts).
@@ -58,8 +60,10 @@ const MIN_FRAMES = 3;
  *  sessions (nothing tuned there): exact pitch sequences 68.0 -> 75.4 %. `EPS` caps what an
  *  unheard octave costs: at 0.02 a note heard only an octave up, a sixth away from the notes
  *  on both sides, was put an octave down (the user's solo recording, 2026-11-24); at 0.005
- *  tuneset 75.3 %, sessions unchanged; lower, the sessions lose. */
-const LEAP_COST = 0.6;
+ *  tuneset 75.3 %, sessions unchanged; lower, the sessions lose. With the register's pass
+ *  (below) and cadence-transcriptor's notes, 0.6 -> 0.4: tuneset 83.7 -> 84.0 %, sessions
+ *  exact 77.1 -> 77.2, dotted dances 66.1 -> 66.4; a plateau from 0.3 to 0.5. */
+const LEAP_COST = 0.4;
 const EPS = 0.005;
 
 /** A heard note: MIDI pitch, first frame, frames. */
@@ -69,17 +73,44 @@ export interface HeardNote {
   frames: number;
 }
 
+/** A second pass keeps the line in its register: each octave also costs `RANGE_COST` a
+ *  semitone beyond `RANGE` semitones from the median pitch of the first pass's notes within
+ *  `RANGE_NOTES` either side. A run of notes heard louder an octave off pays its leaps only at
+ *  its two ends; against the register it pays on every note. Measured (transcription-bench
+ *  sweep, variants/make-oct-range.cjs): sessions exact 76.5 -> 77.1 % (both halves up),
+ *  dotted dances 65.5 -> 66.1, tuneset, flute and the user's solo recording unchanged; a plateau
+ *  from 16 notes, 10-12 semitones, a cost of 1; tighter (5 semitones, or a cost of 3) breaks the
+ *  flute's two-octave arpeggios. */
+const RANGE_NOTES = 24;
+const RANGE = 10;
+const RANGE_COST = 1;
+
 export function withOctaves(notes: ClassNote[]): HeardNote[] {
   const kept = notes.filter(n => n.power > MIN_POWER && n.frames >= MIN_FRAMES);
   const n = kept.length;
   if (!n) return [];
+  const first = octavePath(kept, null);
+  const pitch = Float64Array.from(kept, (note, k) => MIDI_LOW + note.cls + 12 * first[k]!);
+  const centre = new Float64Array(n);
+  for (let k = 0; k < n; k++) {
+    const around = pitch.slice(Math.max(0, k - RANGE_NOTES), Math.min(n, k + RANGE_NOTES + 1)).sort();
+    centre[k] = around[around.length >> 1]!;
+  }
+  const path = octavePath(kept, centre);
+  return kept.map((note, k) => ({ pitch: MIDI_LOW + note.cls + 12 * path[k]!, start: note.start, frames: note.frames }));
+}
+
+/** The octave of each note along the best path; with `centre`, the register's cost added. */
+function octavePath(kept: ClassNote[], centre: Float64Array | null): Int8Array {
+  const n = kept.length;
   const score = new Float64Array(n * OCTAVES);
   const back = new Int8Array(n * OCTAVES);
   const emission = (k: number, o: number): number => {
     const e = kept[k]!.octaves;
     let sum = 0;
     for (const x of e) sum += x;
-    return Math.log(EPS + (sum > 0 ? e[o]! / sum : 0));
+    const v = Math.log(EPS + (sum > 0 ? e[o]! / sum : 0));
+    return centre ? v - RANGE_COST * Math.max(0, Math.abs(MIDI_LOW + kept[k]!.cls + 12 * o - centre[k]!) - RANGE) : v;
   };
   for (let o = 0; o < OCTAVES; o++) score[o] = emission(0, o);
   for (let k = 1; k < n; k++) {
@@ -96,13 +127,12 @@ export function withOctaves(notes: ClassNote[]): HeardNote[] {
   }
   let o = 0;
   for (let q = 1; q < OCTAVES; q++) if (score[(n - 1) * OCTAVES + q]! > score[(n - 1) * OCTAVES + o]!) o = q;
-  const out: HeardNote[] = new Array(n);
+  const path = new Int8Array(n);
   for (let k = n - 1; k >= 0; k--) {
-    const note = kept[k]!;
-    out[k] = { pitch: MIDI_LOW + note.cls + 12 * o, start: note.start, frames: note.frames };
+    path[k] = o;
     o = back[k * OCTAVES + o]!;
   }
-  return out;
+  return path;
 }
 
 // ── The quaver grid ──────────────────────────────────────────────────────────
@@ -157,7 +187,11 @@ function gridSignal(novelty: ArrayLike<number>, notes: HeardNote[]): Float32Arra
   mean /= sig.length || 1;
   for (const v of sig) sd += (v - mean) ** 2;
   sd = Math.sqrt(sd / (sig.length || 1));
-  for (const n of notes) if (n.start >= 0 && n.start < sig.length) sig[n.start] = sig[n.start]! + ONSET_WEIGHT * sd;
+  // a note's start may fall between frames (the decoder's onsets are finer than them)
+  for (const n of notes) {
+    const f = Math.round(n.start);
+    if (f >= 0 && f < sig.length) sig[f] = sig[f]! + ONSET_WEIGHT * sd;
+  }
   return sig;
 }
 
@@ -239,8 +273,10 @@ function accentAt(novelty: ArrayLike<number>, f: number): number {
 /** Repeated notes: the decoder hears "A A A" as one long A (13 % of the notes of the
  *  settings repeat the one before). A long note re-attacked at one of its inner grid points
  *  — an accent over SPLIT x the median accent of the onsets — is split there. Against the
- *  notes as written (pitch and length): 57.9 -> 64.8 %. */
-const SPLIT = 0.7;
+ *  notes as written (pitch and length): 57.9 -> 64.8 %. With the transcriptor's notes and the
+ *  novelty mixed with its onset function (2026-11-24): 0.8 — solo flute's notes written in
+ *  excess 21 -> 14 %, sessions' notes as written 65.9 -> 65.8 %. */
+const SPLIT = 0.8;
 /** Never where the note no longer sounds — its own energy there under SUSTAIN x its peak: the
  *  decoder holds a note through the silence after it, and a breath before the next phrase
  *  is an accent too. Solo flute (scales, no repeated note): notes written in excess
@@ -459,10 +495,13 @@ export interface Transcription {
   rate: number;
 }
 
-/** `classes`: transcribe_notes' output; `novelty`: liveTempo's Novelty of the 48-note
- *  energies `features` (frames x PITCHES); all at `fps` frames a second, the same frames;
- *  `rate`: the quaver rate (liveTempo's estimateRate). Null when no tune was heard. */
-export function transcribe(classes: ArrayLike<number>, novelty: ArrayLike<number>, features: Float32Array, fps: number, rate: number): Transcription | null {
+/** `classes`: the notes, 8 values each (transcriptor.ts's asClassNotes); `novelty`: what the
+ *  grid, the repeated notes and the bars read — liveTempo's Novelty of the 48-note energies
+ *  `features` (frames x PITCHES), or that mixed with the decoder's onset function;
+ *  `metreNovelty`: what the metre reads (liveTempo's Novelty: the metre's rule was fitted on
+ *  its accents); all at `fps` frames a second, the same frames; `rate`: the quaver rate
+ *  (liveTempo's estimateRate). Null when no tune was heard. */
+export function transcribe(classes: ArrayLike<number>, novelty: ArrayLike<number>, features: Float32Array, fps: number, rate: number, metreNovelty: ArrayLike<number> = novelty): Transcription | null {
   const heard = withOctaves(classNotes(classes));
   if (heard.length < 2 || !(rate > 0)) return null;
   const P = fps / rate;
@@ -472,13 +511,27 @@ export function transcribe(classes: ArrayLike<number>, novelty: ArrayLike<number
   // a grid index past the grid (notes crowding its end) reads its last point
   const frameOf = [...grid];
   while (frameOf.length < placed[placed.length - 1]!.at + 1) frameOf.push(grid[grid.length - 1]!);
-  const metre = metreOf(novelty, features, P);
+  const metre = metreOf(metreNovelty, features, P);
   const last = placed[placed.length - 1]!;
   // the bars from the notes as heard (measured so), before the repeated notes are split
   const bars = barStarts(placed, last.at + last.quavers, frameOf, novelty, metre);
   const onsets = new Map(placed.map((n, i) => [n.at, heard[i]!.start]));
   const notes = brokenPairs(splitRepeats(placed, frameOf, novelty, features), onsets, bars, frameOf, metre);
-  return { notes, bars, grid: frameOf, metre, rate };
+  return { notes: toBarEnd(notes, bars, metre), bars, grid: frameOf, metre, rate };
+}
+
+/** The last note held to the end of its bar, as a tune's last note is written ("A4"), not
+ *  only as long as it sounded (the decoder hears where the sound stops). */
+function toBarEnd(notes: GridNote[], bars: boolean[], metre: Metre): GridNote[] {
+  const last = notes[notes.length - 1];
+  if (!last) return notes;
+  let start = -1;
+  for (let k = Math.min(Math.floor(last.at), bars.length - 1); k >= 0; k--) if (bars[k]) { start = k; break; }
+  if (start < 0) return notes;
+  const end = start + PATTERN[metre].length;
+  if (end <= last.at + last.quavers) return notes;
+  const quavers = end - last.at;
+  return [...notes.slice(0, -1), { ...last, quavers, sounds: quavers }];
 }
 
 /** One MIDI pitch a quaver, rests left out: what FolkFriend's key detection reads. */
@@ -557,8 +610,10 @@ const LENGTHS = [12, 8, 6, 4, 3, 2, 1];
 /** Quavers beamed together: half a 4/4 bar, a beat of 6/8. */
 const GROUP: Record<Metre, number> = { '4/4': 4, '6/8': 3 };
 const BARS_PER_LINE = 4;
-/** A silence after a note is written from a crotchet on; shorter, the note is held. */
-const MIN_REST = 2;
+/** A silence after a note is written from a dotted crotchet on; shorter, the note is held: the
+ *  breath at the end of a phrase (a crotchet, often) is written as the held note players write
+ *  ("d4", the user's truth of clean.mp3) — the decoder now hears where a note stops. */
+const MIN_REST = 3;
 
 /** The M:, L:, Q:, K: lines and the body of a transcription in `key` (the caller adds X:
  *  and T:). */
