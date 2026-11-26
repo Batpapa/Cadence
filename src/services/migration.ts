@@ -1,17 +1,24 @@
-import type { AppState, User } from '../types';
+import type { AppState, Card, User } from '../types';
 import { generateId } from '../utils';
 import { ensureCurrentUser, ensureCurrentProfile } from './userService';
 import { migrateClipTags } from './attachmentNames';
 import { migrateAudioMimeTypes } from './audioSniff';
 import { t } from './i18nService';
+import { stripSourceTag } from './cardSourceService';
+import { groupImportTags } from './tagGroups';
 
-export const SCHEMA_VERSION = 9;
+export const SCHEMA_VERSION = 10;
 
-/** The oldest version still migrated. A step goes six months after the format
- *  it upgrades stopped being written (the rule for old formats, 2026-11-26 —
- *  see legacyDeadlines.test.ts): V0 → V1 (a no-op), V1 → V2 (files/embeds into
- *  attachments, 2026-04-20), V2 → V3 (profiles, 2026-04-20) and V3 → V4
+/** The oldest version still migrated. V0 → V1 (a no-op), V1 → V2 (files/embeds
+ *  into attachments, 2026-04-20), V2 → V3 (profiles, 2026-04-20) and V3 → V4
  *  (TheSession tag casing, 2026-05-14) went on 2026-11-26.
+ *
+ *  The steps left STAY, with no deadline (the user's rule, 2026-11-26): they
+ *  convert data that sleeps for as long as it likes — a device put away, a
+ *  backup on a disk, a Drive nobody opened — at the border, once, and cost
+ *  nothing elsewhere. What goes after six months is the rest of the old-format
+ *  support: compatibility with old clients and fallbacks spread through the
+ *  app (legacyDeadlines.test.ts).
  *
  *  A state below it is REFUSED, never read: run through the later steps as if
  *  it were current it would come out corrupted, its attachments still under
@@ -43,12 +50,22 @@ export function stampTuneType(card: Record<string, unknown>): void {
   }
 }
 
+/** V9 → V10's rule, shared with importExport.ts's `migrateRawCards` like
+ *  stampTuneType: the tag naming a card's own source goes (its externalId
+ *  carries it alone since 2026-11-09), and the type and key an import wrote
+ *  flat ("reel", "Aminor") move into their groups. Both only on a card from a
+ *  tune source, and only in the importers' exact formats (cardSourceService,
+ *  tagGroups) — a user's own tag is never touched. */
+export function settleImportTags(card: Record<string, unknown>): void {
+  stripSourceTag(card as unknown as Card);
+  groupImportTags(card as unknown as Card);
+}
+
 // Keyed by the version each step migrates FROM, to the next: OLDEST_SCHEMA up
 // to SCHEMA_VERSION - 1, none missing (migration.test.ts checks it).
 // `Record<string, unknown>` handles partially-typed legacy shapes.
 const migrations: Record<number, (s: Record<string, unknown>) => void> = {
   // V4 → V5: assign a stable guid to every card (used for cross-device references).
-  // LEGACY until 2026-12-12 — states at v4, not written since 2026-06-12 (1e03573): this step, OLDEST_SCHEMA to 5.
   4: (s) => {
     const cards = s['cards'] as Record<string, Record<string, unknown>>;
     for (const card of Object.values(cards ?? {})) {
@@ -56,7 +73,6 @@ const migrations: Record<number, (s: Record<string, unknown>) => void> = {
     }
   },
   // V5 → V6: rename card.importance → card.defaultImportance, entry.importanceOverride → entry.importance.
-  // LEGACY until 2027-01-02 — states at v5, not written since 2026-07-02 (e80cdc6): this step, OLDEST_SCHEMA to 6.
   5: (s) => {
     const cards = s['cards'] as Record<string, Record<string, unknown>>;
     for (const card of Object.values(cards ?? {})) {
@@ -80,14 +96,12 @@ const migrations: Record<number, (s: Record<string, unknown>) => void> = {
   // V6 → V7: stamp `type: 'tune'` on cards imported from a tune source, so a
   //          library built before card types existed can populate a tuneset.
   //          Writes one optional field; moves and deletes nothing.
-  // LEGACY until 2027-03-04 — states at v6, not written since 2026-09-04 (c8f1276): this step, OLDEST_SCHEMA to 7 (stampTuneType stays: importExport uses it).
   6: (s) => {
     const cards = s['cards'] as Record<string, Record<string, unknown>>;
     for (const card of Object.values(cards ?? {})) stampTuneType(card);
   },
   // V7 → V8: a clip's "already attached" tag moves out of its file name into
   //          `clipOf`, so names can be renamed freely and read cleanly.
-  // LEGACY until 2027-03-15 — states at v7, not written since 2026-09-15 (8cc5882): this step, OLDEST_SCHEMA to 8.
   7: (s) => {
     const cards = s['cards'] as Record<string, Record<string, unknown>>;
     for (const card of Object.values(cards ?? {})) migrateClipTags(card);
@@ -97,10 +111,18 @@ const migrations: Record<number, (s: Record<string, unknown>) => void> = {
   //          stored as video/webm and so opened in a bare <video> element
   //          rather than the custom player. Reads a head per candidate file,
   //          rewrites one string, and touches nothing it cannot prove.
-  // LEGACY until 2027-03-18 — states at v8, not written since 2026-09-18 (8d52dd5): this step, OLDEST_SCHEMA to 9.
   8: (s) => {
     const cards = s['cards'] as Record<string, Record<string, unknown>>;
     for (const card of Object.values(cards ?? {})) migrateAudioMimeTypes(card);
+  },
+  // V9 → V10: the tags imports wrote until 2026-11-09 — the source's name, and
+  //           type and key flat — settled once, at the border (2026-11-26).
+  //           stateNormalise.ts still does it on every commit for the cards a
+  //           bundle from before 2026-11-09 may still write; this is what stays
+  //           once that has gone.
+  9: (s) => {
+    const cards = s['cards'] as Record<string, Record<string, unknown>>;
+    for (const card of Object.values(cards ?? {})) settleImportTags(card);
   },
 };
 
@@ -150,10 +172,9 @@ export function migrateState(user: AppState): void {
  */
 export function applyExternalData(raw: Record<string, unknown>, currentId: string): User {
   // The multi-user AppState of before 2026-06-01 ({users, currentUserId}) is no
-  // longer converted (gone 2026-11-26, the six-month rule). Refused like any
-  // state too old: it stopped at v4, above the floor until that moves to 5 —
-  // read as a single user it would come out half right, its settings lost.
-  // LEGACY until 2026-12-12 — this check and the migration.multiUser key, once OLDEST_SCHEMA is 5 and refuses those blobs by their version.
+  // longer converted (gone 2026-11-26). Refused like any state too old — but by
+  // its shape, since it stopped at v4, above the floor: read as a single user
+  // it would come out half right, its settings lost.
   if ('users' in raw && 'currentUserId' in raw) throw new Error(t('migration.multiUser'));
   migrateState(raw as unknown as AppState);
   const user = raw as unknown as User;

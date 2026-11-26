@@ -58,11 +58,12 @@ export function normaliseState(state: AppState): void {
   const cards = state.cards ?? {};
 
   // Not derived, but the same need for a choke point: the tag naming a card's
-  // source, which its externalId carries alone since 2026-11-09. Here rather
-  // than in a schema migration, because an older build still writes the tag
-  // on import and refresh, and its cards arrive by Drive long after any
-  // one-off migration has run (cardSourceService.ts). The type and key an
-  // import wrote flat move into their groups for the same reason (tagGroups.ts).
+  // source, which its externalId carries alone since 2026-11-09, and the type
+  // and key an import wrote flat. The V9 → V10 migration settles stored data
+  // once (migration.ts); this is for what a build from before 2026-11-09 still
+  // writes on import and refresh, arriving by Drive into a state already
+  // labelled v10 — which it reads as it is, and no migration runs again.
+  // LEGACY until 2027-05-09 — bundles that write source tags and flat type/key tags, not shipped since 2026-11-09 (9521c38, 9a3c56a): this loop (the V9 → V10 step stays).
   for (const card of Object.values(cards)) {
     stripSourceTag(card);
     groupImportTags(card);

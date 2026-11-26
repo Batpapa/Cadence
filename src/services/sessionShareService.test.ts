@@ -3,7 +3,7 @@ import type { Analysis } from '../session/model';
 
 // The .cds package (a zip since 2026-11-15): written as a Blob of Blobs, read
 // back from a file, audio byte for byte — and the older JSON files, audio in
-// base64, still read until 2027-05-15.
+// base64, still read (with no deadline).
 
 const { saved, downloads } = vi.hoisted(() => ({
   saved: { meta: [] as Analysis[], audio: [] as Array<{ id: string; blob: Blob }> },
@@ -89,7 +89,7 @@ describe('session package', () => {
     expect(saved.audio).toHaveLength(0);
   });
 
-  it('still reads a JSON file, audio in base64 (LEGACY READ, until 2027-05-15)', async () => {
+  it('still reads a JSON file, audio in base64 (LEGACY READ, kept)', async () => {
     const { id: _id, ...rest } = session;
     const legacy = JSON.stringify({ schemaVersion: 1, session: rest, audioBase64: btoa('\x01\x02\x03'), audioMimeType: 'audio/mp4' });
     await importSessionFile(new File([legacy], 'old.cds'), true);

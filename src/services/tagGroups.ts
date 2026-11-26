@@ -218,10 +218,10 @@ export function keyTag(key: string): string {
  *  their groups. Only on a tune imported from a source — a set's tags are its
  *  owner's own, and a hand-made card's "reel" is the user's word, not the
  *  import's — and only values in the importers' exact formats, so nothing is
- *  guessed. Idempotent; run on every normalisation, since an older build still
- *  writes the flat tags when it imports or refreshes. Returns whether the card
- *  changed.
- *  LEGACY until 2027-05-09 — flat type/key tags on imported cards, not written since 2026-11-09 (9a3c56a): this and its call in stateNormalise.ts. */
+ *  guessed. Idempotent; run by the V9 → V10 migration (migration.ts's
+ *  settleImportTags), and on every normalisation for as long as an older build
+ *  may still write the flat tags (stateNormalise.ts). Returns whether the card
+ *  changed. */
 export function groupImportTags(card: Card): boolean {
   const id = card.externalId;
   if (!id || !(id.startsWith('thesession:') || id.startsWith('irishtuneinfo:'))) return false;

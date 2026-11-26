@@ -21,10 +21,9 @@ import { getSettingAbcMeta } from '../session/recognition/indexStore';
 // roughly 380 MB of audio a JavaScript string cannot hold it at all. The zip
 // points at the stored recording instead of copying it.
 //
-// LEGACY until 2027-05-15 — the JSON .cds, not written since 2026-11-16 (5fba61d): openLegacyPackage and its branch.
-// LEGACY READ — the JSON format is still read, for the files people keep.
-// To be REMOVED ON 2027-05-15 (decided 2026-11-15): openLegacyPackage and the
-// branch that calls it.
+// LEGACY READ — the JSON format is still read, for the files people keep, with
+// no deadline: a shared analysis is a file kept for the long term (decided
+// 2026-11-26, over the removal planned on 2026-11-15 for 2027-05-15).
 
 const SCHEMA_VERSION = 2;
 const DATA_ENTRY = 'analysis.json';
@@ -36,7 +35,7 @@ interface PackageData {
   audioMimeType: string | null;
 }
 
-/** The JSON format, read until 2027-05-15. */
+/** The JSON format, written until 2026-11-16 and still read. */
 interface LegacyPackage {
   schemaVersion: number;
   session: Omit<Analysis, 'id'>;
@@ -98,7 +97,7 @@ async function openPackage(pkg: Blob): Promise<OpenedPackage> {
   };
 }
 
-/** LEGACY READ — remove on 2027-05-15. */
+/** LEGACY READ — kept with no deadline (a file kept for the long term). */
 function openLegacyPackage(text: string): OpenedPackage {
   let data: unknown;
   try { data = JSON.parse(text); } catch { throw new Error('Invalid session package'); }

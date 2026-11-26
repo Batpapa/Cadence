@@ -1,6 +1,6 @@
 import type { AppState, Card } from '../types';
 import { toDateStr, generateId, arrayBufferToBase64, downloadTextFile, downloadCadenceFile } from '../utils';
-import { SCHEMA_VERSION, stampTuneType } from './migration';
+import { SCHEMA_VERSION, stampTuneType, settleImportTags } from './migration';
 import { migrateClipTags } from './attachmentNames';
 import { migrateAudioMimeTypes } from './audioSniff';
 import { cardAliases } from './aliasService';
@@ -158,6 +158,11 @@ function migrateRawCards(cards: unknown[], from: number): void {
   // audio would open in a <video> element on the receiving device too.
   if (from < 9) {
     for (const raw of cards) migrateAudioMimeTypes(raw as Record<string, unknown>);
+  }
+  // Same function as migration.ts's V9 → V10, for the same reason: a package
+  // exported before 2026-11-09 carries the source's tag and type and key flat.
+  if (from < 10) {
+    for (const raw of cards) settleImportTags(raw as Record<string, unknown>);
   }
 }
 

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { migrateState, applyExternalData, stampTuneType, SCHEMA_VERSION, OLDEST_SCHEMA, MIGRATION_STEPS } from './migration';
 import { parseCardPackageFromText } from './importExport';
+import { typeTag, keyTag } from './tagGroups';
 import type { AppState } from '../types';
 
 function card(over: Record<string, unknown> = {}): Record<string, unknown> {
@@ -99,11 +100,12 @@ describe('migrateState V6 → V7', () => {
   });
 
   it('touches nothing else on the card', () => {
-    const s = stateWith(card({ id: 'a', externalId: 'thesession:1', tags: ['reel'] }));
+    // A tag of the user's own: an import's "reel" would be grouped by V9 → V10.
+    const s = stateWith(card({ id: 'a', externalId: 'thesession:1', tags: ['session favourite'] }));
     migrateState(s);
     const c = s.cards['a']!;
     expect(c.name).toBe('Cooley\'s');
-    expect(c.tags).toEqual(['reel']);
+    expect(c.tags).toEqual(['session favourite']);
     expect(c.defaultImportance).toBe(1);
     expect(c.content).toEqual({ notes: '', attachments: [] });
   });
@@ -131,6 +133,32 @@ describe('migrateState V7 → V8', () => {
     migrateState(s);
     expect(s.cards['a']!.content.attachments[0]).toMatchObject({ name: 'Reel — S (0m00–1m00).mp3', clipOf: 'abcd1234·12' });
     expect(s.schemaVersion).toBe(SCHEMA_VERSION);
+  });
+});
+
+describe('migrateState V9 → V10', () => {
+  it('drops the source tag and groups type and key on a card from a tune source', () => {
+    const s = stateWith(card({ id: 'a', externalId: 'thesession:1', tags: ['TheSession', 'reel', 'Aminor', 'mine'] }));
+    s.schemaVersion = 9;
+    migrateState(s);
+    expect(s.cards['a']!.tags).toEqual([typeTag('reel'), keyTag('Aminor'), 'mine']);
+    expect(s.schemaVersion).toBe(SCHEMA_VERSION);
+  });
+
+  it('leaves a hand-made card\'s tags alone — its "reel" is the user\'s word', () => {
+    const s = stateWith(card({ id: 'a', tags: ['TheSession', 'reel', 'Aminor'] }));
+    s.schemaVersion = 9;
+    migrateState(s);
+    expect(s.cards['a']!.tags).toEqual(['TheSession', 'reel', 'Aminor']);
+  });
+
+  it('settles a package exported before it, like the state path', () => {
+    const text = JSON.stringify({
+      schemaVersion: 9,
+      cards: [card({ id: 'a', externalId: 'irishtuneinfo:7', tags: ['IrishTuneInfo', 'jig', 'Dmajor'] })],
+    });
+    const cards = parseCardPackageFromText(text);
+    expect(cards[0]!.tags).toEqual([typeTag('jig'), keyTag('Dmajor')]);
   });
 });
 

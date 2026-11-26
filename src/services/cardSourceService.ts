@@ -54,9 +54,9 @@ const SOURCE_TAGS: Record<CardSource, string> = {
  *
  *  Only that tag, and only when the id agrees: "TheSession" on a hand-made
  *  card, or on an irishtune.info card, is the user's own and says something
- *  the id does not. Run on every normalisation rather than once, because an
- *  older build still writes the tag when it imports or refreshes a card.
- *  LEGACY until 2027-05-09 — source tags on imported cards, not written since 2026-11-09 (9521c38): this and its call in stateNormalise.ts. */
+ *  the id does not. Run by the V9 → V10 migration (migration.ts's
+ *  settleImportTags), and on every normalisation for as long as an older build
+ *  may still write the tag (stateNormalise.ts). */
 export function stripSourceTag(card: Card): boolean {
   const source = cardSource(card);
   if (!source || !Array.isArray(card.tags)) return false;

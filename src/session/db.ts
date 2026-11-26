@@ -267,7 +267,9 @@ function migrateSession(s: Analysis | undefined): Analysis | undefined {
  *  migrated) resolves almost instantly — a couple of existence checks and
  *  nothing more to do.
  *
- *  LEGACY until 2027-02-26 — the shared and per-user analyser stores, not written since 2026-08-26 (254112f): this, its call, legacyPerUserDbName, LEGACY_SESSIONS_STORE and CHUNKS_STORE's reads (the KV store stays). */
+ *  Kept with no deadline: a migration of data stored for the long term (an
+ *  analyser untouched since 2026-08-26 still holds its recordings), the rule
+ *  for those since 2026-11-26. */
 async function migrateToFinalShape(userId: string): Promise<void> {
   const migratedMeta: Record<string, Analysis> = {};   // finalized → AppState.modules
   const migratedDrafts: Record<string, Analysis> = {}; // status:'recording' → local DRAFT_STORE, never AppState

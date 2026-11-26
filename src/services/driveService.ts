@@ -250,7 +250,8 @@ export function initDriveForUser(userId: string): void {
   if (owner && tokenOwner && owner !== tokenOwner) clearStoredToken();
   // Seed the edit counters for installs predating them (2026-08-31), keeping
   // the one bit the old timestamp bookkeeping carried: "unsynced edits exist".
-  // LEGACY until 2027-02-28 — Drive bookkeeping without edit counters, not written since 2026-08-31 (9d7503d): this seeding.
+  // Kept with no deadline: a migration of state stored for the long term — a
+  // device back after months with unsynced edits must not read them as synced.
   if (localStorage.getItem(lsEditSeq(userId)) === null) {
     const local  = parseInt(localStorage.getItem(lsLocalTs(userId))  ?? '0');
     const synced = parseInt(localStorage.getItem(lsSyncedTs(userId)) ?? '0');
@@ -782,7 +783,8 @@ async function fetchDriveIdentity(token: string): Promise<{ googleId: string; em
 
 /** Records the account for connections that never got one.
  *
- *  LEGACY until 2027-03-14 — Drive connections recorded without their account, not written since 2026-09-14 (4d3861a): backfillLoginHint and its call.
+ *  Kept with no deadline: a migration of state stored for the long term (a
+ *  connection made before 2026-09-14 on a device away since then).
  *
  *  The email is what `login_hint` carries, and without it a renewal is not the
  *  window that closes by itself — it is the account chooser, answered by hand,

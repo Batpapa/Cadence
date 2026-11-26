@@ -4,10 +4,15 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 // ── Old formats come out on their date ───────────────────────────────────────
-// The rule (2026-11-26): code that only exists to read, migrate or still write
-// an OLD format of Cadence's own — an older storage shape, an older file,
-// an older bundle or APK — is removed six months after that format stopped
-// being written. Each such place carries a marker, on one line:
+// The rule (2026-11-26), in two halves:
+//  - A MIGRATION of data stored for the long term (schema steps, old storage
+//    shapes, device bookkeeping) stays, with no deadline: such data can sleep
+//    for as long as it likes, and converting it once at the border costs
+//    nothing anywhere else. Those carry no marker.
+//  - Everything else that only exists for an old format of Cadence's own —
+//    compatibility with older bundles, APKs or servers, and fallbacks spread
+//    through the app — is removed six months after the format stopped being
+//    written. Each such place carries a marker, on one line:
 //
 //   LEGACY until YYYY-MM-DD — <the old format>, not written since YYYY-MM-DD (<commit>): <what goes>.
 //
@@ -16,8 +21,8 @@ import path from 'node:path';
 // when something real still depends on it, its date is moved WITH the reason
 // written beside it.
 //
-// Not markers: frozen names (Analysis.annotations…), which are permanent, and
-// the .cdc readers kept for packages written by hand or by an AI.
+// Not markers either: frozen names (Analysis.annotations…), which are
+// permanent, and the .cdc readers kept for packages written by hand or by an AI.
 
 const SRC = path.dirname(fileURLToPath(import.meta.url));
 

@@ -21,12 +21,11 @@ import { externalAttachmentBlobs, externalAttachmentBytes, type ExportGate } fro
 // for the CRC and never held whole; until then it was assembled in memory and
 // capped at 1.5 GB, and a .cdb was JSON with its attachments in base64.
 //
-// LEGACY READ — a .cdb in JSON is still read (parseBackup). To be REMOVED ON
-// 2027-01-15 (decided 2026-11-15: an old backup is stale anyway):
-// parseJsonBackup, isValidBackup and the branch that calls them. The recovery
-// screen (main.ts, ?mode=recovery) still WRITES a JSON .cdb: move it to the
-// archive first.
-// LEGACY until 2027-01-15 — the JSON .cdb, not written by the app since 2026-11-16 (5fba61d), still by the recovery screen: parseJsonBackup, isValidBackup and their branch (decided 2026-11-15, earlier than the six-month rule).
+// LEGACY READ — a .cdb in JSON is still read (parseBackup), with no deadline:
+// a backup is a file kept for the long term, and reading an old one is the
+// whole point of it (decided 2026-11-26, over the removal planned on
+// 2026-11-15 for 2027-01-15). The recovery screen (main.ts, ?mode=recovery)
+// still writes one, too.
 
 export const BACKUP_DATA_ENTRY = 'data.cdb';
 const AUDIO_DIR = 'audio/';
