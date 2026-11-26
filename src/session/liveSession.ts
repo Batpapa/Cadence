@@ -1,4 +1,4 @@
-import { WakeLockManager } from './audio/capture';
+import { WakeLockManager } from '../services/wakeLock';
 import { startLiveForeground, refreshLiveForeground, stopLiveForeground } from '../native/liveForeground';
 import { createLiveSource, type LiveStreamSource, type LiveSourceKind } from './audio/sources';
 import { SessionFileRecorder } from './audio/recorder';

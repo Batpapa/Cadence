@@ -8,7 +8,7 @@ import { capturing } from '../services/audioSession';
 import { fmtTime } from '../services/audioPresets';
 import { audioExtension } from '../services/zip';
 import { MicSource } from '../session/audio/sources';
-import { WakeLockManager } from '../session/audio/capture';
+import { WakeLockManager } from '../services/wakeLock';
 import { pickRecorderMime } from '../session/audio/recorder';
 import { MemoryRecorder } from '../thesessionEmbed/memoryRecorder';
 import { appState } from '../store';

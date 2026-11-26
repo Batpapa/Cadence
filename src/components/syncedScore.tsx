@@ -7,7 +7,7 @@ import { engraveScore, type ScoreMeasure } from '../services/abcLineBreaks';
 import { ENGRAVE_HYSTERESIS, engraveOptions, engraveWidthOf, cropToInk } from './scoreEngraving';
 import { getZoom } from '../services/zoomService';
 import { appState } from '../store';
-import { WakeLockManager } from '../session/audio/capture';
+import { WakeLockManager } from '../services/wakeLock';
 import type { ScoreFace } from '../types';
 import { bindFaceSplit, type FaceSplit } from './faceSplit';
 

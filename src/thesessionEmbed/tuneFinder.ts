@@ -1,5 +1,6 @@
 import { createLiveSource, createFileSource, probeAudioDuration, canCaptureDeviceAudio, canPlayFile, type LiveStreamSource, type PcmSource } from '../session/audio/sources';
-import { WakeLockManager, NoCapturedAudioError, DisplayCaptureUnsupportedError } from '../session/audio/capture';
+import { NoCapturedAudioError, DisplayCaptureUnsupportedError } from '../session/audio/capture';
+import { WakeLockManager } from '../services/wakeLock';
 import { RecognitionClient } from '../session/recognitionClient';
 import { DetectionTracker } from '../session/detectionState';
 import { ANALYSIS_SAMPLE_RATE, HOP_S_IMPORT, IMPORT_MIN_S, importWarnMinutes } from '../session/sessionConfig';

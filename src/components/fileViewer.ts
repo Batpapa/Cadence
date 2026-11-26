@@ -1,21 +1,18 @@
 import LZString from 'lz-string';
-import type { AbcOpenMode, AbcPaper, Attachment, FileEntry, ScoreFace } from '../types';
+import type { AbcPaper, Attachment, FileEntry, ScoreFace } from '../types';
 import { entryToObjectUrl, entryToBytes, arrayBufferToBase64, focusIfDesktop, downloadBlob, isAppleTouchDevice } from '../utils';
 import { isNative } from '../native/platform';
 import { renderMarkdown, sanitizeEmphasisOnly } from './markdown';
-import { mkCustomSelect } from './customSelectVanilla';
 import { qualityColour, faded } from './followColour';
 import { keyGapText } from '../session/keyName';
 import { starIconElement, iconElement, ExternalLinkIcon, GearIcon, TrashIcon, PlusIcon, SaveIcon, ExpandIcon, CollapseIcon,
-  MetronomeIcon, TuningForkIcon, SwingStraightIcon, SwingLightIcon, SwingMediumIcon, SwingStrongIcon,
-  WarningTriangleIcon, ChevronDownIcon, WaveformIcon, CloudIcon, ArrowLeftIcon, ArrowRightIcon, MicIcon, MusicNoteIcon,
+  MetronomeIcon, TuningForkIcon, WarningTriangleIcon, ChevronDownIcon, WaveformIcon, CloudIcon, ArrowLeftIcon, ArrowRightIcon, MicIcon, MusicNoteIcon,
   MinusIcon, CrossIcon, PencilIcon } from './icons';
 import { t } from '../services/i18nService';
 import { unlockAbcjsAudio, claimAudioFocus, releaseAudioFocus } from '../services/audioSession';
 import { injectDefaultTempo, stripForRender, isAbcFile, decodeAbc, splitAbcTunes, parseAbcBlock, abcOpenMode,
   showAbcSyntaxCheck, suggestPlayedVersion, blankForRender, locateAbcWarning, abcWarningRange,
-  abcPaper, abcPaperSetting, ABC_PAPER_AUTO, abcSwingAtOpen, meterCanSwing,
-  ABC_PAPERS, SWING_CHOICES, NO_SWING, stepSwingChoice } from '../services/abcService';
+  abcPaper, abcSwingAtOpen, meterCanSwing, ABC_PAPERS } from '../services/abcService';
 import { engraveScore, type ScoreMeasure } from '../services/abcLineBreaks';
 import { ENGRAVE_HYSTERESIS, engraveOptions, engraveWidthOf, cropToInk } from './scoreEngraving';
 import { modalMaxH, modalMaxW, getZoom } from '../services/zoomService';
@@ -28,14 +25,19 @@ import { bindFaceSplit } from './faceSplit';
 import { rangeInSource, posInDrawn, type ScoreEditor } from './scoreEditor';
 import { tapTracks, tappedNote, secondsPerWhole, playTap, stopTap, tapPlaysNote, type MidiPitch } from '../services/abcTapNote';
 import { shiftPosition, boundNote, notesAcross, regionOf, setBound, type Bounds } from '../services/abcBounds';
-import { showModal, updateTopModal, setModalMaxWidth, confirmModal, askUnsavedChanges, MODAL_W } from './modal';
+import { showModal, updateTopModal, setModalMaxWidth, confirmModal, askUnsavedChanges } from './modal';
 import { splitFileName, renamedFileName, safeFileName } from '../services/attachmentNames';
 import type { AudioPresetsBinding } from '../services/audioPresets';
 import { playIcon, pauseIcon, stopIcon, rewindIcon, repeatIcon, boundIcon } from './playbackIcons';
-import { appState, mutate } from '../store';
+import { appState } from '../store';
 import { registerOverlay } from './overlayStack';
 import { mountPlayAlong } from '../session/ui/PlayAlongView';
 import { viewMimeType, isHeif, heifToJpeg } from '../services/heic';
+import { WakeLockManager } from '../services/wakeLock';
+import {
+  DEFAULT_TEMPO_PERCENT, MIN_TEMPO_PERCENT, MAX_TEMPO_PERCENT, TEMPO_STEP_PERCENT, abcTempoPercent, mkSwingButton, showAbcPrefsModal,
+} from './abcPlaybackPrefs';
+import { showTransposeModal } from './abcTransposeModal';
 
 // ── ABC Transcription Tools share-link integration ────────────────────────────
 // https://michaeleskin.com/abctools/userguide.html#generate_share_link — the
@@ -56,33 +58,6 @@ function abcToolsShareUrl(tuneText: string): string {
   });
   return `${ABC_TOOLS_BASE_URL}?${params.toString()}`;
 }
-
-// General MIDI program numbers (0-indexed) for instruments relevant to Irish
-// trad — GM happens to have dedicated Fiddle/Whistle/Banjo/Bagpipe patches.
-const ABC_INSTRUMENTS = [
-  { value: '',    labelKey: 'fileViewer.abc.instrument.default' },
-  { value: '110', labelKey: 'fileViewer.abc.instrument.fiddle' },
-  { value: '78',  labelKey: 'fileViewer.abc.instrument.whistle' },
-  { value: '73',  labelKey: 'fileViewer.abc.instrument.flute' },
-  { value: '21',  labelKey: 'fileViewer.abc.instrument.accordion' },
-  { value: '105', labelKey: 'fileViewer.abc.instrument.banjo' },
-  { value: '109', labelKey: 'fileViewer.abc.instrument.pipes' },
-  { value: '25',  labelKey: 'fileViewer.abc.instrument.guitar' },
-];
-
-/** Score playback speed, as a percentage of what is written. The bounds are
- *  what abcjs will actually warp to without the audio falling apart, and the
- *  low end is the point of the setting: a tune you are learning is worth
- *  hearing at half speed. */
-const DEFAULT_TEMPO_PERCENT = 100;
-const MIN_TEMPO_PERCENT = 10;
-const MAX_TEMPO_PERCENT = 300;
-
-/** What one press of the speed stepper is worth, in points of percentage —
- *  and the percentage is of the tune's own written tempo, which is how this
- *  music is practised ("take it at three-quarter speed"). It is also the unit
- *  `setWarp` takes, so nothing is converted on the way. */
-const TEMPO_STEP_PERCENT = 5;
 
 /** Where the transport sits, in both the dialog and the full-page reader: at
  *  the BOTTOM, centred, under the music.
@@ -111,12 +86,6 @@ const BOTTOM_ROW_CLASS = 'abc-bottom-row';
 /** The source tabs (who plays the score) over the bottom row: the foot of the
  *  viewer's column, its own height. */
 const BOTTOM_BLOCK_CLASS = 'shrink-0 flex flex-col gap-2';
-
-function abcTempoPercent(): number {
-  const stored = appState.value.abcTempoPercent;
-  if (typeof stored !== 'number' || !Number.isFinite(stored)) return DEFAULT_TEMPO_PERCENT;
-  return Math.max(MIN_TEMPO_PERCENT, Math.min(MAX_TEMPO_PERCENT, Math.round(stored)));
-}
 
 // ── How big the music is drawn ────────────────────────────────────────────────
 //
@@ -211,379 +180,7 @@ function nearestScroller(el: HTMLElement): HTMLElement | null {
   return null;
 }
 
-/** One glyph per entry of SWING_CHOICES, in its order: the gauge's level is
- *  the index. */
-const SWING_GLYPHS = [SwingStraightIcon, SwingLightIcon, SwingMediumIcon, SwingStrongIcon];
-
-/** The swing button: four settings cycled by one press each, drawn as a rhythm
- *  and a gauge rather than named — the name ("swing moyen") was wider than the
- *  transport beside it. The NAME is still there, in the tooltip and for a
- *  screen reader.
- *
- *  Right-click walks BACK through them, so a cycle of four is never three
- *  presses away from the one you wanted. `contextmenu` rather than a long
- *  press: this is a pointer affordance, and on a touch screen a fifth press
- *  simply comes round again.
- *
- *  The same button in the viewer's transport and in the playback preferences
- *  (the user's call, 2026-10-22: the setting is chosen the way it is seen,
- *  not from a list). `onChange` fires on every press with the new value. */
-function mkSwingButton(initial: number, onChange: (value: number) => void): HTMLButtonElement {
-  let value = initial;
-  const btn = document.createElement('button');
-  btn.className = 'abc-chip';
-  const show = () => {
-    const i = Math.max(0, SWING_CHOICES.findIndex(c => c.value === value));
-    btn.replaceChildren(iconElement(SWING_GLYPHS[i] ?? SwingStraightIcon, 16));
-    btn.classList.toggle('abc-chip-on', value !== NO_SWING);
-    const label = `${t('fileViewer.abc.swing')} · ${t(SWING_CHOICES[i]!.labelKey)}`;
-    btn.title = label;
-    btn.setAttribute('aria-label', label);
-  };
-  const step = (d: 1 | -1) => {
-    value = stepSwingChoice(value, d);
-    show();
-    onChange(value);
-  };
-  show();
-  btn.onclick = () => { btn.blur(); step(1); };
-  btn.addEventListener('contextmenu', (e) => {
-    e.preventDefault();
-    btn.blur();
-    step(-1);
-  });
-  return btn;
-}
-
-/** Playback preferences, reachable from any score's header and stored on the
- *  user, so they travel with everything else through Drive. They describe the
- *  listener rather than the tune: which instrument to hear it on, and how fast
- *  a score should open when you are still learning it.
- *
- *  `onApply` re-primes the score that is open, so a change is heard at once
- *  instead of at the next opening. `onSyntaxCheck` re-reads its text when the
- *  syntax check is turned on or off. */
-export function showAbcPrefsModal(onApply: () => void, onSyntaxCheck?: () => void): void {
-  const body = document.createElement('div');
-  body.className = 'space-y-4';
-
-  /** One setting per line: its name on the left, its control on the right. */
-  const row = (labelKey: string, control: HTMLElement): HTMLElement => {
-    const line = document.createElement('div');
-    line.className = 'flex items-center justify-between gap-3';
-    const label = document.createElement('label');
-    label.className = 'label shrink-0';
-    label.textContent = t(labelKey);
-    line.append(label, control);
-    return line;
-  };
-
-  // ── Default speed ──
-  const speedControl = document.createElement('div');
-  speedControl.className = 'flex items-center gap-2 shrink-0';
-  const speedInput = document.createElement('input');
-  speedInput.type = 'number';
-  speedInput.min = String(MIN_TEMPO_PERCENT);
-  speedInput.max = String(MAX_TEMPO_PERCENT);
-  speedInput.step = '5';
-  speedInput.className = 'input w-20 text-sm';
-  speedInput.value = String(abcTempoPercent());
-  const speedUnit = document.createElement('span');
-  speedUnit.className = 'text-xs text-dim';
-  speedUnit.textContent = '%';
-  speedControl.append(speedInput, speedUnit);
-
-  /** Saved on every change, with no confirmation step: each setting is one
-   *  value, instantly undone by setting it back. A Cancel button would only
-   *  invite the question of what it reverts. */
-  const persist = () => {
-    const raw = parseInt(speedInput.value, 10);
-    const percent = isNaN(raw) ? DEFAULT_TEMPO_PERCENT
-      : Math.max(MIN_TEMPO_PERCENT, Math.min(MAX_TEMPO_PERCENT, raw));
-    speedInput.value = String(percent);
-    const instrument = getInstrument();
-    void mutate(st => {
-      // Absent rather than stored when it is the default: nothing to carry
-      // through Drive, and nothing to explain to a future reader.
-      if (percent === DEFAULT_TEMPO_PERCENT) delete st.abcTempoPercent; else st.abcTempoPercent = percent;
-      if (instrument === '') delete st.abcInstrument; else st.abcInstrument = parseInt(instrument, 10);
-    });
-  };
-
-  // Speed is SAVED ONLY. Re-priming the score would stop whatever is playing —
-  // renderTune pauses and rebuilds the audio buffer — and it could not even
-  // change the speed, which is frozen at the moment the score opened. All
-  // disruption, no effect.
-  //
-  // `change`, not `input`: typing "150" passes through "1" and "15", and each
-  // would be written as a preference nobody asked for.
-  speedInput.addEventListener('change', persist);
-
-  // ── Swing at opening ──
-  // Saved only, like the speed and for the same reason: it is how the NEXT
-  // score starts. The one on screen has its own button, two centimetres away.
-  // Straight is the absence, like the speed's 100 %.
-  const swingBtn = mkSwingButton(abcSwingAtOpen(appState.value), (v) => {
-    void mutate(st => { if (v === NO_SWING) delete st.abcSwingAtOpen; else st.abcSwingAtOpen = v; });
-  });
-
-  // ── Instrument ──
-  const stored = appState.value.abcInstrument;
-  const { el: instrSelect, getValue: getInstrument } = mkCustomSelect(
-    ABC_INSTRUMENTS.map(i => ({ value: i.value, label: t(i.labelKey) })),
-    stored === undefined ? '' : String(stored),
-    // The instrument DOES re-prime: hearing it is the whole point of picking
-    // one, and it is a change the current score can actually take on.
-    () => { persist(); onApply(); },
-    'flex items-center gap-2 w-full text-sm bg-surface border border-border rounded-md px-3 py-1.5 text-primary cursor-pointer hover:border-accent',
-  );
-  // The select's own wrapper is `flex:1`, so it takes what the label leaves.
-  instrSelect.style.maxWidth = '14rem';
-
-  // ── Write a set's repeats out ──
-  // The odd one out here: speed and instrument describe how a score SOUNDS,
-  // this one changes what a set's fused score CONTAINS. It sits here anyway
-  // because this is where a reader of that score is when the question occurs
-  // to them — and because a fused score is rebuilt on every read, so the
-  // change is visible the next time one is opened, with nothing stored to
-  // migrate.
-  const repeatsBox = document.createElement('input');
-  repeatsBox.type = 'checkbox';
-  repeatsBox.className = 'card-checkbox';
-  repeatsBox.checked = appState.value.abcIncludeRepeats === true;
-  // Re-primes like the instrument, and for a stronger reason: this one changes
-  // the NOTATION, so the score on screen would otherwise keep showing how it
-  // was built a moment ago. The viewer re-reads its source on apply — see
-  // PreviewModalOpts.reloadEntry.
-  repeatsBox.addEventListener('change', () => {
-    const on = repeatsBox.checked;
-    void mutate(st => { if (on) st.abcIncludeRepeats = true; else delete st.abcIncludeRepeats; })
-      .then(() => onApply());
-  });
-
-  // ── A tapped note, heard ──
-  // Saved only: it is read at each tap, so the score on screen follows it
-  // without being re-primed.
-  const tapBox = document.createElement('input');
-  tapBox.type = 'checkbox';
-  tapBox.className = 'card-checkbox';
-  tapBox.checked = tapPlaysNote(appState.value);
-  tapBox.addEventListener('change', () => {
-    const on = tapBox.checked;
-    void mutate(st => { if (on) delete st.abcTapPlaysNote; else st.abcTapPlaysNote = false; });
-  });
-
-  // ── The ABC face's syntax check ──
-  // Applied at once to the score open behind, which only has to re-read its
-  // text: nothing is engraved for it.
-  const syntaxBox = document.createElement('input');
-  syntaxBox.type = 'checkbox';
-  syntaxBox.className = 'card-checkbox';
-  syntaxBox.checked = showAbcSyntaxCheck(appState.value);
-  syntaxBox.addEventListener('change', () => {
-    const on = syntaxBox.checked;
-    void mutate(st => { if (on) st.abcShowSyntaxCheck = true; else delete st.abcShowSyntaxCheck; })
-      .then(() => onSyntaxCheck?.());
-  });
-
-  // ── The Play-along's offer of the version being played ──
-  // Read when the Play-along is turned on: one already listening goes on as
-  // it started.
-  const suggestBox = document.createElement('input');
-  suggestBox.type = 'checkbox';
-  suggestBox.className = 'card-checkbox';
-  suggestBox.checked = suggestPlayedVersion(appState.value);
-  suggestBox.addEventListener('change', () => {
-    const on = suggestBox.checked;
-    void mutate(st => { if (on) delete st.abcSuggestPlayedVersion; else st.abcSuggestPlayedVersion = false; });
-  });
-
-  // ── Which face a score opens on ──
-  // Saved only, like the speed: it describes the NEXT score to be opened, and
-  // flipping the one already on screen would answer a question nobody asked —
-  // the tabs are right there, two centimetres away. The incipit reads the same
-  // value, so a preference set here is honoured on the card page too.
-  const { el: openSelect } = mkCustomSelect(
-    [
-      { value: 'sheet', label: t('fileViewer.abc.sheetTab') },
-      { value: 'text',  label: t('fileViewer.abc.textTab') },
-    ],
-    abcOpenMode(appState.value),
-    (v) => void mutate(st => { st.abcOpenMode = v as AbcOpenMode; }),
-    'flex items-center gap-2 w-full text-sm bg-surface border border-border rounded-md px-3 py-1.5 text-primary cursor-pointer hover:border-accent',
-  );
-  openSelect.style.maxWidth = '14rem';
-
-  // ── How a score is DRAWN ──
-  // Here rather than on the score's own toolbar (the user's call,
-  // 2026-09-21): both are set once and then left alone, which is what this
-  // dialog is for, while the toolbar is for what you reach for mid-tune.
-  // Both re-apply at once — they change the engraving, and the score on
-  // screen would otherwise go on showing the old one.
-  const { el: paperSelect } = mkCustomSelect(
-    [
-      { value: ABC_PAPER_AUTO, label: t('fileViewer.abc.paper.theme') },
-      { value: 'dark',  label: t('fileViewer.abc.paper.dark') },
-      { value: 'sepia', label: t('fileViewer.abc.paper.sepia') },
-      { value: 'white', label: t('fileViewer.abc.paper.white') },
-    ],
-    abcPaperSetting(appState.value),
-    (v) => {
-      // "Thème" is the ABSENCE of a stored value, which is what lets the paper
-      // keep following the app when the app changes. Anything else is written
-      // explicitly — a choice that happens to match today's theme still has to
-      // be stored, or switching to the light theme would silently take the
-      // score with it.
-      void mutate(st => {
-        if (v === ABC_PAPER_AUTO) delete st.abcPaper; else st.abcPaper = v as AbcPaper;
-      }).then(() => onApply());
-    },
-    'flex items-center gap-2 w-full text-sm bg-surface border border-border rounded-md px-3 py-1.5 text-primary cursor-pointer hover:border-accent',
-  );
-  paperSelect.style.maxWidth = '14rem';
-
-  // "Bars per line" lived here until 2026-10-24: the score follows the lines
-  // of the ABC now (see engraveScore), and cuts them only where they do not fit.
-  body.append(
-    row('fileViewer.abc.prefs.speed', speedControl),
-    row('fileViewer.abc.prefs.swing', swingBtn),
-    row('fileViewer.abc.instrument', instrSelect),
-    row('fileViewer.abc.paper', paperSelect),
-    row('fileViewer.abc.prefs.includeRepeats', repeatsBox),
-    row('fileViewer.abc.prefs.tapPlaysNote', tapBox),
-    row('fileViewer.abc.prefs.syntaxCheck', syntaxBox),
-    row('fileViewer.abc.prefs.suggestVersion', suggestBox),
-    row('fileViewer.abc.prefs.openOn', openSelect),
-  );
-
-  // No footer: nothing to confirm, so nothing to press. The ✕ is the only way
-  // out, and it closes on a state that has already been saved.
-  showModal(t('fileViewer.abc.prefs.title'), body, []);
-  focusIfDesktop(speedInput);
-}
-
-/** How far up or down the score is written out, asked in a dialog of its own.
- *
- *  The same shape as the analyser's pitch control, deliberately: one round
- *  button in the bar, and the choice made somewhere with room to say what it
- *  means. Unlike that one there is no sign to untangle here — `visualTranspose`
- *  raises the written music by the number it is given, which is what every
- *  musician means by "up two".
- *
- *  `onPick` fires on every press, not on a confirmation: each tap IS the
- *  change, the score behind redraws, and the ✕ is the only way out that makes
- *  sense for a control you judge by looking at the result. */
-function showTransposeModal(current: number, limit: number, onPick: (semitones: number) => void): void {
-  let value = current;
-
-  const body = document.createElement('div');
-  body.className = 'space-y-4';
-
-  const row = document.createElement('div');
-  row.className = 'flex items-center justify-center gap-5';
-  const stepBtn = 'btn-outline w-11 h-11 p-0 rounded-full flex items-center justify-center shrink-0';
-
-  const down = document.createElement('button');
-  down.className = stepBtn;
-  down.appendChild(iconElement(MinusIcon, 16));
-  down.setAttribute('aria-label', t('fileViewer.abc.transposeDown'));
-  const readout = document.createElement('span');
-  readout.className = 'font-mono tabular-nums text-2xl text-center';
-  readout.style.width = '3ch';
-  const up = document.createElement('button');
-  up.className = stepBtn;
-  up.appendChild(iconElement(PlusIcon, 16));
-  up.setAttribute('aria-label', t('fileViewer.abc.transposeUp'));
-  row.append(down, readout, up);
-
-  const said = document.createElement('p');
-  said.className = 'text-sm text-primary text-center leading-relaxed';
-
-  const reset = document.createElement('button');
-  reset.className = 'btn-ghost text-xs w-full';
-  reset.textContent = t('fileViewer.abc.transposeReset');
-
-  /** The number said out loud, so the sign never has to be read to know what
-   *  was set — the failure the analyser's control was rebuilt to fix. */
-  const describe = (n: number): string => {
-    if (n === 0) return t('fileViewer.abc.transpose.asWritten');
-    const dir = n < 0 ? 'down' : 'up';
-    const m = Math.abs(n);
-    if (m === 1) return t(dir === 'up' ? 'fileViewer.abc.transpose.semitoneUp' : 'fileViewer.abc.transpose.semitoneDown');
-    if (m === 2) return t(dir === 'up' ? 'fileViewer.abc.transpose.toneUp' : 'fileViewer.abc.transpose.toneDown');
-    return t(dir === 'up' ? 'fileViewer.abc.transpose.semitonesUp' : 'fileViewer.abc.transpose.semitonesDown', { n: String(m) });
-  };
-
-  const paint = () => {
-    readout.textContent = value === 0 ? '0' : (value > 0 ? `+${value}` : String(value));
-    readout.className = `font-mono tabular-nums text-2xl text-center ${value === 0 ? 'text-dim' : 'text-accent font-semibold'}`;
-    readout.style.width = '3ch';
-    said.textContent = describe(value);
-    down.toggleAttribute('disabled', value <= -limit);
-    up.toggleAttribute('disabled', value >= limit);
-    // `display`, not `visibility`: hidden by visibility it still held its line,
-    // and an empty band under the sentence is a gap nobody can explain.
-    reset.style.display = value === 0 ? 'none' : '';
-  };
-  const step = (d: number) => {
-    const next = Math.max(-limit, Math.min(limit, value + d));
-    if (next === value) return;
-    value = next;
-    paint();
-    onPick(value);
-  };
-  down.onclick = () => step(-1);
-  up.onclick = () => step(1);
-  reset.onclick = () => { if (value !== 0) { value = 0; paint(); onPick(0); } };
-  paint();
-
-  body.append(row, said, reset);
-  // + pressed several times, and the first press makes the dialog taller: the
-  // reset appears, and the sentence can take a second line.
-  showModal(t('fileViewer.abc.transpose'), body, [], { maxWidth: MODAL_W.s, pinTop: true });
-}
-
 // ── Preview modal ─────────────────────────────────────────────────────────────
-
-/** Keeps the screen on while a page is read from without being touched — a
- *  score or a PDF given the whole page, on a music stand.
- *
- *  Every step is optional: the API is absent on some browsers, the request
- *  is refused when the page is not visible, and the lock is dropped by the
- *  system whenever the tab goes to the background — which is why it is
- *  re-taken on `visibilitychange` rather than assumed to hold. */
-function screenWakeLock(): { hold: () => void; release: () => void } {
-  let wanted = false;
-  let lock: { release: () => Promise<void> } | null = null;
-  const take = () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const nav = navigator as any;
-    if (!nav.wakeLock?.request || document.visibilityState !== 'visible') return;
-    nav.wakeLock.request('screen')
-      // A lock that arrives after the page was left is released at once,
-      // rather than held for a reader who is no longer reading.
-      .then((l: { release: () => Promise<void> }) => {
-        if (wanted) lock = l; else void l.release().catch(() => {});
-      })
-      .catch(() => { /* refused: the page is readable all the same */ });
-  };
-  const onVisibility = () => { if (wanted && !document.hidden) take(); };
-  return {
-    hold: () => {
-      if (wanted) return;
-      wanted = true;
-      document.addEventListener('visibilitychange', onVisibility);
-      take();
-    },
-    release: () => {
-      wanted = false;
-      document.removeEventListener('visibilitychange', onVisibility);
-      const held = lock;
-      lock = null;
-      void held?.release().catch(() => {});
-    },
-  };
-}
 
 function modalWidth(entry: FileEntry): string {
   const m = entry.mimeType;
@@ -936,7 +533,7 @@ export function showPreviewModal(
     let pdfFullscreen: HTMLElement | null = null;
     let pdfModalExpanded = false;
     let unregisterPdfFullscreen = () => {};
-    const pdfWakeLock = screenWakeLock();
+    const pdfWakeLock = new WakeLockManager();
 
     /** The viewer: the browser's <embed>, or the box pdf.js draws pages into. */
     let viewer: HTMLElement;
@@ -1041,7 +638,7 @@ export function showPreviewModal(
       if (!pdfFullscreen) return;
       unregisterPdfFullscreen();
       unregisterPdfFullscreen = () => {};
-      pdfWakeLock.release();
+      pdfWakeLock.stop();
       pdfFrame.classList.remove('flex', 'flex-col', 'flex-1', 'min-h-0');
       viewer.classList.remove('flex-1', 'min-h-0');
       viewer.classList.add('rounded');
@@ -1067,7 +664,7 @@ export function showPreviewModal(
       pdfFullscreen = overlay;
       sizePdf();
       labelPdfButton();
-      pdfWakeLock.hold();
+      void pdfWakeLock.start();
       // Topmost overlay: Escape and the Android back gesture leave the
       // reading page, not the viewer underneath it.
       unregisterPdfFullscreen = registerOverlay(exitPdfFullscreen);
@@ -2401,7 +1998,7 @@ export function showPreviewModal(
     const transportAnchor = document.createComment('abc-transport');
     let unregisterFullscreen = () => {};
 
-    const wakeLock = screenWakeLock();
+    const wakeLock = new WakeLockManager();
 
     // No page-turn bands here on purpose. The full-page reader had a band down
     // each side that scrolled by a screenful; it was dropped on 2026-09-22
@@ -2415,7 +2012,7 @@ export function showPreviewModal(
       if (!fullscreen) return;
       unregisterFullscreen();
       unregisterFullscreen = () => {};
-      wakeLock.release();
+      wakeLock.stop();
       scoreFrame.classList.remove('flex', 'flex-col', 'flex-1', 'min-h-0');
       scoreScroll.classList.remove('flex-1', 'min-h-0');
       scoreScroll.classList.add('rounded');
@@ -2462,7 +2059,7 @@ export function showPreviewModal(
       fullscreenBtn.replaceChildren(iconElement(CollapseIcon, 14));
       fullscreenBtn.title = t('fileViewer.abc.fullscreenExit');
       fullscreenBtn.setAttribute('aria-label', t('fileViewer.abc.fullscreenExit'));
-      wakeLock.hold();
+      void wakeLock.start();
       // Registered as the topmost overlay, which is what makes Escape and the
       // Android back gesture leave full page rather than close the viewer
       // underneath it.
@@ -4287,19 +3884,4 @@ export function showPreviewModal(
         ]
       : [],
   });
-}
-
-// ── Public API ────────────────────────────────────────────────────────────────
-
-export function renderNotes(notes: string): HTMLElement {
-  const wrap = document.createElement('div');
-  wrap.className = 'markdown text-sm leading-relaxed';
-  // Empty notes render as nothing at all: the card page hides the body when
-  // there is none, and study never calls this with an empty string.
-  if (!notes.trim()) return wrap;
-  renderMarkdown(notes).then(html => {
-    wrap.innerHTML = html;
-    wrap.querySelectorAll('a').forEach(a => { a.target = '_blank'; a.rel = 'noopener noreferrer'; });
-  }).catch(() => { wrap.textContent = notes; });
-  return wrap;
 }

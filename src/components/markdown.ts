@@ -125,3 +125,20 @@ function installSpoilerToggle(): void {
     el.classList.toggle('spoiler-revealed');
   });
 }
+
+/** A card's or an analysis's notes, drawn as markdown in an element of its
+ *  own, links opening elsewhere. Here since 2026-11-26 (it lived in
+ *  fileViewer.ts, which the card page, study and the analysis notes imported
+ *  whole for it). */
+export function renderNotes(notes: string): HTMLElement {
+  const wrap = document.createElement('div');
+  wrap.className = 'markdown text-sm leading-relaxed';
+  // Empty notes render as nothing at all: the card page hides the body when
+  // there is none, and study never calls this with an empty string.
+  if (!notes.trim()) return wrap;
+  renderMarkdown(notes).then(html => {
+    wrap.innerHTML = html;
+    wrap.querySelectorAll('a').forEach(a => { a.target = '_blank'; a.rel = 'noopener noreferrer'; });
+  }).catch(() => { wrap.textContent = notes; });
+  return wrap;
+}

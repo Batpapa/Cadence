@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import { showModal, renderModalBody, askUnsavedChanges, MODAL_W } from '../../components/modal';
 import { EmptyState } from '../../components/ui';
-import { renderNotes } from '../../components/fileViewer';
+import { renderNotes } from '../../components/markdown';
 import { PencilIcon } from '../../components/icons';
 import { focusIfDesktop } from '../../utils';
 

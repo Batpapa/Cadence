@@ -5,7 +5,7 @@ import { locatePresetHolder, writeAudioPresets } from '../services/audioPresets'
 import { pickRandom, pickOptimal, pickStochastic, pickSequential, advanceSkips, decksContainingCard } from '../services/deckService';
 import { isAvailable, buildContextualEntries } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
-import { renderNotes } from '../components/fileViewer';
+import { renderNotes } from '../components/markdown';
 import { AttachmentList, CardRefList, openCardScore, hasScore, type AttachmentListOptions } from '../components/attachmentList';
 import { isTuneset } from '../services/cardTypeService';
 import { IncipitRow } from '../components/incipit';

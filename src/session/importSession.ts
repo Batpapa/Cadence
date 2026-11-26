@@ -1,4 +1,4 @@
-import { WakeLockManager } from './audio/capture';
+import { WakeLockManager } from '../services/wakeLock';
 import { createFileSource } from './audio/sources';
 import type { PcmSource } from './audio/sources';
 import { RecognitionClient } from './recognitionClient';

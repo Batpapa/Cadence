@@ -11,7 +11,7 @@ import { TrashIcon, ExternalLinkIcon, iconElement, TuneIcon, TuneSetIcon, Pencil
 import { IconButton, Metric, EmptyState } from '../components/ui';
 import { selectionIsHidden, toggleSpoiler } from '../components/spoilerToggle';
 import { confirmModal, showModal, closeModal } from '../components/modal';
-import { renderNotes } from '../components/fileViewer';
+import { renderNotes } from '../components/markdown';
 import { AttachmentList, CardRefList, showCardPicker, cardToRef, openCardScore, hasScore,
   type AttachmentListOptions } from '../components/attachmentList';
 import { decksContainingCard, deckPath } from '../services/deckService';
