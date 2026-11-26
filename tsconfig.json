@@ -12,7 +12,11 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "jsx": "react-jsx",
-    "jsxImportSource": "preact"
+    "jsxImportSource": "preact",
+    // transcriptor/src imports with `.ts` extensions (Node runs it as it is, for its benches):
+    // rewritten to `.js` in what ts-loader emits, which webpack resolves back to the `.ts` file
+    // (resolve.extensionAlias in webpack.config.js)
+    "rewriteRelativeImportExtensions": true
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*", "transcriptor/src/**/*"]
 }

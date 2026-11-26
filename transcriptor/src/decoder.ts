@@ -98,13 +98,13 @@ function classStep(from: number, to: number): number {
   return Math.max(PITCH_MODEL[12 + up]!, PITCH_MODEL[12 + up - 12]!);
 }
 
-/** The settings measured best (transcriptor/JOURNAL.md, « R6 »): sessions, tuneset,
+/** The settings measured best (transcriptor's research journal, outside the repo, « R6 »): sessions, tuneset,
  *  classical flute and the user's solo recording judged together — and, since 2026-11-26, the
  *  recogniser's windows too (« Moteur unique »): ONE regime for writing ABC and for recognising.
  *  cutCost 2 -> 1.5: transcription as good (sessions tokens 66.8 -> 67.4, tuneset 84.0 -> 84.2),
- *  the right tune first in 91.8 -> 92.3 % of the windows; FolkFriend's cleaned class energies as an
- *  extra view at 0.2 (when the analysis carries them, classView): 92.3 -> 93.2 %, the gain in the
- *  least clear windows (79.0 -> 82.4 %), transcription unchanged within the judges' noise. */
+ *  the right tune first in 91.8 -> 92.3 % of the windows; an extra class view at 0.2 (when one is
+ *  given — in Cadence FolkFriend's cleaned energies, folkfriendView.ts): 92.3 -> 93.2 %, the gain
+ *  in the least clear windows (79.0 -> 82.4 %), transcription unchanged within the judges' noise. */
 export const DEFAULTS: DecoderOptions = {
   radius: 3, threshold: 0.5, pitchWeight: 0.25, cutCost: 1.5, onsetGain: 0.9, repeatCost: 8, repeatGain: 0.5,
   intervalWeight: 0, floor: 0.01, restLevel: 0.1, restSlope: 2, levelPct: 0.95, voicingFrom: 'energy',
@@ -112,24 +112,14 @@ export const DEFAULTS: DecoderOptions = {
   octaveDown: 1.07, acfWeight: 0.3, peakFloorDb: 50, extraWeight: 0.2,
 };
 
-/** FolkFriend's cleaned energies (FolkFriendWASM.take_clean_features over 48 notes from MIDI 48,
- *  frames of 1024 samples at 48 kHz: the harmonic part, each note minus its median over
- *  CLEAN_VIEW.drone frames taken every CLEAN_VIEW.stride, as its pitch-class engine reads them)
- *  folded to the 12 classes, each frame's 5 strongest kept: the decoder's extra view (`Analysis.extra`,
- *  `extraHop` CLEAN_VIEW.hop). Measured: without the drone removal 92.1 % instead of 93.2; 5 classes
- *  kept = all 12, 3: 92.7. */
-export const CLEAN_VIEW = { drone: 469, stride: 47, hop: 1024 };
-export function classView(f48: Float32Array): Float32Array {
-  const frames = Math.floor(f48.length / 48), out = new Float32Array(frames * 12);
-  const row = new Float32Array(12);
-  for (let f = 0; f < frames; f++) {
-    for (let m = 0; m < 48; m++) out[f * 12 + (m % 12)] += f48[f * 48 + m]!;
-    row.set(out.subarray(f * 12, f * 12 + 12));
-    row.sort();
-    const keep = row[12 - 5]!;
-    for (let c = 0; c < 12; c++) if (out[f * 12 + c]! < keep) out[f * 12 + c] = 0;
-  }
-  return out;
+/** Another view of the 12 pitch classes, read beside the decoder's own (option extraWeight):
+ *  12 energies a frame, frames of `hop` samples from the recording's first sample. */
+export interface ClassView { classes: Float32Array; hop: number }
+
+/** The analysis with a class view attached (or as it is without one). */
+export function withView(a: Analysis, view?: ClassView): Analysis {
+  if (view) { a.extra = view.classes; a.extraHop = view.hop; }
+  return a;
 }
 
 /** Short window: for time (onsets, where notes change). Long window: for pitch. */
@@ -373,21 +363,20 @@ export function decode(a: Analysis, options: DecoderOptions = {}): Note[] {
  *  centred `onsetCentre` samples after its start). */
 export interface Heard { notes: Note[]; onsets: Float32Array; onsetCentre: number }
 
-export function hear(pcm: Float32Array, rate: number, progress?: (ratio: number) => void, extra?: Float32Array): Heard {
-  const a = analyseAudio(pcm, rate, { progress });
-  if (extra) { a.extra = extra; a.extraHop = CLEAN_VIEW.hop; }
+export function hear(pcm: Float32Array, rate: number, progress?: (ratio: number) => void, view?: ClassView): Heard {
+  const a = withView(analyseAudio(pcm, rate, { progress }), view);
   return a.grid ? { notes: decode(a), onsets: a.grid, onsetCentre: a.gridSize! / 2 } : { notes: decode(a), onsets: a.short.flux, onsetCentre: (a.shortSize ?? SHORT) / 2 };
 }
 
 /** A recording's notes (hear's). */
-export function transcribeNotes(pcm: Float32Array, rate: number, progress?: (ratio: number) => void, extra?: Float32Array): Note[] {
-  return hear(pcm, rate, progress, extra).notes;
+export function transcribeNotes(pcm: Float32Array, rate: number, progress?: (ratio: number) => void, view?: ClassView): Note[] {
+  return hear(pcm, rate, progress, view).notes;
 }
 
 /** What Cadence's transcription.ts reads for its grid, its repeated notes and its bars:
  *  liveTempo's novelty (`novelty`, one value a frame of `frameLength` samples) and our onset
  *  function brought to those frames (the most of the short frames in each), 0.6 and 0.4, each
- *  over its mean. Measured (transcriptor/JOURNAL.md): bar lines on a downbeat
+ *  over its mean. Measured (transcriptor's research journal, outside the repo): bar lines on a downbeat
  *  50.3 -> 56.6 % (0.5: 57.3, but the user's solo recording then a half bar out), within half
  *  a bar 73.3 -> 75.5 %; the tempo and the metre keep liveTempo's. */
 export function gridNovelty(novelty: ArrayLike<number>, heard: Pick<Heard, 'onsets' | 'onsetCentre'>, frameLength: number, weight = 0.4): Float32Array {

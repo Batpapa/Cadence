@@ -1,12 +1,12 @@
 // ── A recording written out as ABC ───────────────────────────────────────────
 // The hidden transcription (2026-11-23, the user; transcribeRecording.tsx): the notes the
-// transcription's own decoder hears (transcriptor.ts, from cadence-transcriptor — each note
+// transcription's own decoder hears (transcriptor/src — each note
 // a pitch class with the energy of each of its octaves, as FolkFriend's fork gave them until
 // 2026-11-24), turned into a tune: octaves, quavers, repeated notes, metre, bars, key, then
 // the ABC text.
 //
 // Every choice below was measured (research records outside the repo:
-// transcription-bench/JOURNAL.md, transcriptor/JOURNAL.md). Judges: the tuneset corpus
+// transcription-bench/JOURNAL.md, transcriptor's research journal, outside the repo). Judges: the tuneset corpus
 // (Beauguitte, Duggan & Kelleher, ISMIR 2016 — the only public Irish recordings annotated note
 // by note: 13 session recordings, 2 solo flutes), 170 tunes of Cadence's annotated sessions
 // against their TheSession settings (relative only: people do not play the setting), a
@@ -495,7 +495,7 @@ export interface Transcription {
   rate: number;
 }
 
-/** `classes`: the notes, 8 values each (transcriptor.ts's asClassNotes); `novelty`: what the
+/** `classes`: the notes, 8 values each (transcriptor/src/decoder.ts's asClassNotes); `novelty`: what the
  *  grid, the repeated notes and the bars read — liveTempo's Novelty of the 48-note energies
  *  `features` (frames x PITCHES), or that mixed with the decoder's onset function;
  *  `metreNovelty`: what the metre reads (liveTempo's Novelty: the metre's rule was fitted on

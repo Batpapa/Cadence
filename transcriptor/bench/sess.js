@@ -1,4 +1,5 @@
 'use strict';
+const { REPO, WS } = require('./paths');
 // Session judge, direct: our decoder on the cached analyses of the session excerpts (every
 // STEP-th), octaves by transcription.ts's Viterbi; against the excerpt's TheSession settings
 // (relative only): notes a second, agreement in classes and exact pitches (merged
@@ -6,7 +7,7 @@
 //   STEP=2 node bench/sess.js '{"sets": [{...}, ...]}'
 const fs = require('node:fs'), v8 = require('node:v8'), path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const B = 'C:/Perso/IrishMusicExperiments/transcription-bench';
+const B = `${WS}/transcription-bench`;
 const C = require(`${B}/lib/common`);
 const { sessionItems } = require(`${B}/lib/corpora`);
 const { classShift } = require(`${B}/lib/sessionScore`);
@@ -14,7 +15,7 @@ const spec = JSON.parse(process.argv[2] || '{"sets":[{}]}');
 const STEP = Number(process.env.STEP || 2);
 (async () => {
   const D = await import(pathToFileURL(path.join(__dirname, '../src/decoder.ts')).href);
-  const T = await import(pathToFileURL('C:/Perso/IrishMusicExperiments/Cadence/src/session/recognition/transcription.ts').href);
+  const T = await import(pathToFileURL(`${REPO}/src/session/recognition/transcription.ts`).href);
   const items = sessionItems();
   const ff = v8.deserialize(fs.readFileSync(`${B}/cache/sweep/session.v8`));
   const idx = items.map((_, i) => i).filter(i => i % STEP === 0);

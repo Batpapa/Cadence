@@ -1,10 +1,11 @@
 'use strict';
+const { REPO, WS } = require('./paths');
 // The repeat-consistency judge's excerpts (transcription-bench/cache/sweep/<corpus>-align60.v8,
 // 60 s score-followed) with our decoder's notes in place of FolkFriend's (fractional frames).
 //   node bench/align-ours.js <session|dotted> [part] [parts]   -> <corpus>-align60-ours[-part].v8
 const fs = require('node:fs'), v8 = require('node:v8'), path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const B = 'C:/Perso/IrishMusicExperiments/transcription-bench';
+const B = `${WS}/transcription-bench`;
 const C = require(`${B}/lib/common`);
 const corpora = require(`${B}/lib/corpora`);
 const [corpus, part, parts] = [process.argv[2], Number(process.argv[3] || 0), Number(process.argv[4] || 1)];

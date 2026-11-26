@@ -52,7 +52,7 @@ const ROUND = Number(process.env['ANNEAL_ROUND'] ?? 10);
 const OUT_DIR = nodePath.resolve(__dirname, '.out');
 
 /** Two dimensions added for the reserve phase (2026-09-13, hypothesis H1 in
- *  CAMPAIGN_V3.md). Both default OFF, and off they draw nothing from the
+ *  the campaign notes, outside the repo). Both default OFF, and off they draw nothing from the
  *  generator, so a seed replays exactly as it did before they existed.
  *  ANNEAL_ABSENT=1 searches the absent-tune observation (fraction of the floor).
  *  ANNEAL_HOLDS="0:1,2:0.8" binds chains to temporal-hold settings (k:decay) —
@@ -178,7 +178,7 @@ it('anneals around the promising regions', () => {
         found += sc.found; total += sc.total; fp += sc.falsePositives;
         // 4th column since 2026-09-13 06:05: segments answering no annotated row
         // where they sit. `fp` counts distinct ids, so five phantoms of the same
-        // tune count once — see CAMPAIGN_V3.md, H2.
+        // tune count once — see the campaign notes, outside the repo, H2.
         per.push([sc.found, sc.total, sc.falsePositives, sc.misplaced]);
         if (sc.found) covs.push(sc.meanCoverage * sc.found);
       }

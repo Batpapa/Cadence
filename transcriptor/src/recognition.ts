@@ -5,7 +5,7 @@
 // FolkFriend's contour.rs does (contour_from_notes: 60-175 crotchets a minute by 5, each note
 // rounded to whole quavers, the rounding error weighed by the note's power, times a note-length
 // model intercept - slope x quavers), with two changes measured on the 18 annotated sessions
-// (recognition-research/JOURNAL.md, section 22; windows whose right tune is first):
+// (research journals, outside the repo; windows whose right tune is first):
 //   - a gentler note-length slope (0.2, not 0.5): 91.0 -> 92.4 %, flat from 0.1 to 0.3 (neutral
 //     on FolkFriend's own notes: the gain comes from our onsets' precision);
 //   - a note lasts to the next onset (at most 0.25 s past its end): rests are not symbols.
@@ -14,9 +14,11 @@
 // The whole chain, FolkFriend's 91.8 % -> 93.2 %; final detections with the production segmenter
 // (its settings swept again, cross-validated: they stay): 685/703 tunes for 13 false positives,
 // FolkFriend 683 for 11; wrong names shown briefly 46 -> 33; the right name on screen 86.7 ->
-// 88.2 % of the tunes' time.
+// 88.2 % of the tunes' time. With the worker's two additions (Cadence's followedTunes.ts: the
+// followed tune scored when it falls out of the shortlist, the shortlist re-scored by `opinions`):
+// 688/703 for 12, wrong names shown briefly 21.
 
-import { analyseAudio, decode, CLEAN_VIEW } from './decoder.ts';
+import { analyseAudio, decode, withView, type ClassView, type DecoderOptions } from './decoder.ts';
 
 /** FolkFriend's frames: 1024 samples at 48 kHz. */
 const FPS = 48000 / 1024;
@@ -54,21 +56,33 @@ export function contourOf(notes: [number, number, number][]): string {
   return s;
 }
 
-/** The window heard: its contour for the recogniser, and its tuning (semitones off A = 440). */
-export interface RecognitionWindow { contour: string; tuning: number }
+/** The window heard: its contour for the recogniser, other opinions on it (contours of the same
+ *  window decoded otherwise, to re-score the shortlist with), and its tuning (semitones off
+ *  A = 440). */
+export interface RecognitionWindow { contour: string; opinions: string[]; tuning: number }
 
-/** A window of `pcm` (at `rate`, best 48 kHz as measured) as the recogniser's query; `extra`:
- *  FolkFriend's cleaned energies of the same samples folded by classView (without them, the
- *  decoder reads its own views only: 92.3 % instead of 93.2). */
-export function recognitionContour(pcm: Float32Array, rate: number, extra?: Float32Array): RecognitionWindow {
-  const a = analyseAudio(pcm, rate, { gridSize: 0 });
-  if (extra) { a.extra = extra; a.extraHop = CLEAN_VIEW.hop; }
-  const notes = decode(a);
+/** The other opinions' decodings (research journals, outside the repo, « Noms faux brefs »): the
+ *  same analysis decoded otherwise — more cuts, its own views only — so that its errors fall
+ *  elsewhere. The shortlist re-scored by it (each tune at the mean of its scores): wrong names
+ *  shown briefly 33 -> 21, as few as averaging with FolkFriend's whole second search (20), the
+ *  right tune first in 94.3 % of the windows (93.2). A second decoding of the same analysis costs
+ *  a fraction of the first. One opinion measured; more would be listed here. */
+const OPINIONS: DecoderOptions[] = [{ cutCost: 1, extraWeight: 0 }];
+
+function contourOfNotes(notes: { cls: number; onset: number; offset: number; power: number }[]): string {
   const out: [number, number, number][] = [];
   notes.forEach((n, i) => {
     const next = notes[i + 1]?.onset ?? n.offset;
     const end = Math.max(n.offset, Math.min(next, n.offset + GAP));
     out.push([n.cls, (end - n.onset) * FPS, n.power]);
   });
-  return { contour: contourOf(out), tuning: a.tuning };
+  return contourOf(out);
+}
+
+/** A window of `pcm` (at `rate`, best 48 kHz as measured) as the recogniser's query; `view`: an
+ *  extra class view of the same samples (in Cadence FolkFriend's cleaned energies, folkfriendView.ts;
+ *  without it, the decoder reads its own views only: 92.3 % instead of 93.2). */
+export function recognitionContour(pcm: Float32Array, rate: number, view?: ClassView): RecognitionWindow {
+  const a = withView(analyseAudio(pcm, rate, { gridSize: 0 }), view);
+  return { contour: contourOfNotes(decode(a)), opinions: OPINIONS.map(o => contourOfNotes(decode(a, o))), tuning: a.tuning };
 }

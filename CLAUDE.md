@@ -98,7 +98,7 @@ propres. Les 2 warnings de taille de bundle au build sont normaux et préexistan
 | `src/views/` | écrans (accueil, bibliothèque, carte, révision, modules) |
 | `src/session/` | analyseur de sessions : audio, reconnaissance, UI, stockage propre |
 | `src/trending/` | module tendances |
-| `transcriptor/` | décodeur de notes (transcription cachée, reconnaissance expérimentale) : sources TS + Rust, banc, `JOURNAL.md`. `src/session/recognition/transcriptor.ts` en est **généré** (`node transcriptor/bench/bundle.js`), ne jamais l'éditer à la main ; le WASM livré est dans `vendor/cadence-transcriptor/` |
+| `transcriptor/` | décodeur de notes (transcription cachée, et la reconnaissance par défaut depuis le 26-11 ; le décodeur FolkFriend reste à portée pour comparer) : sources TS + Rust, banc, `README.md`. Les notes de recherche sont HORS dépôt (`../transcription-bench/transcriptor-journal.md`, `../recognition-research/JOURNAL.md`) : ne jamais en remettre dans le dépôt. Cadence importe `transcriptor/src` tel quel (imports en `.ts` : `rewriteRelativeImportExtensions` + `extensionAlias` de webpack) ; le WASM livré est dans `vendor/cadence-transcriptor/`. Les moteurs de reconnaissance : `src/session/recognition/windowEngine.ts` |
 | `src/i18n/` | `en.json` + `fr.json`, à garder synchrones |
 | `src/types.ts` | modèle de données, et les commentaires qui disent ce qui est gelé |
 

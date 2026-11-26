@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { transcribeNotes, asClassNotes, recognitionContour, classView, resample, RATE, type Note } from './transcriptor';
+import { transcribeNotes, asClassNotes, resample, RATE, type Note } from './decoder.ts';
+import { recognitionContour } from './recognition.ts';
+import { classView, CLEAN_VIEW } from './folkfriendView.ts';
 
 /** Harmonic tones (MIDI pitch, start s, length s): 6 partials falling as 1/h, a 5 ms attack,
  *  a 10 ms release, a little noise. */
@@ -84,7 +86,8 @@ describe('classView', () => {
     f48[0] = 1; f48[12] = 2; f48[24] = 3;
     for (let c = 1; c < 11; c++) f48[c] = 1 - c / 20;
     // frame 1: silent
-    const v = classView(f48);
+    const { classes: v, hop } = classView(f48);
+    expect(hop).toBe(CLEAN_VIEW.hop);
     expect(Array.from(v.subarray(0, 12)).map(x => +x.toFixed(2))).toEqual([6, 0.95, 0.9, 0.85, 0.8, 0, 0, 0, 0, 0, 0, 0]);
     expect(Array.from(v.subarray(12, 24))).toEqual(new Array(12).fill(0));
   });

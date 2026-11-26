@@ -1,4 +1,5 @@
 'use strict';
+const { REPO, WS } = require('./paths');
 // Our decoder's notes into the transcription bench: for each item of a corpus cached there
 // (cache/sweep/<corpus>.v8), the FolkFriend classes replaced by ours, at FolkFriend's frames
 // (8 values a note: class, first frame, frames, power, 4 octave energies); novelty and
@@ -7,7 +8,7 @@
 //   node bench/to-sweep.js <corpus> '{decoder options}' [tag]   -> cache/sweep/<corpus><tag>.v8
 const fs = require('node:fs'), v8 = require('node:v8'), path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const BENCH = 'C:/Perso/IrishMusicExperiments/transcription-bench';
+const BENCH = `${WS}/transcription-bench`;
 const C = require(`${BENCH}/lib/common`);
 const corpora = require(`${BENCH}/lib/corpora`);
 const { userItems } = require(`${BENCH}/lib/user`);
@@ -16,7 +17,7 @@ const FPS = 48000 / 1024;
 
 (async () => {
   const D = await import(pathToFileURL(path.join(__dirname, '../src/decoder.ts')).href);
-  const LT = await import(pathToFileURL('C:/Perso/IrishMusicExperiments/Cadence/src/session/liveTempo.ts').href);
+  const LT = await import(pathToFileURL(`${REPO}/src/session/liveTempo.ts`).href);
   process.env.FLUTE_EVERY = '1';
   const items = corpus === 'tuneset' ? corpora.tunesetItems() : corpus === 'session' ? corpora.sessionItems() : corpus === 'dotted' ? corpora.dottedItems() : corpus === 'flute' ? corpora.fluteItems() : userItems();
   const cache = v8.deserialize(fs.readFileSync(`${BENCH}/cache/sweep/${corpus}.v8`));

@@ -1,9 +1,10 @@
 'use strict';
+const { REPO, WS } = require('./paths');
 // The analysis now against a cached one (an earlier code): largest differences.
 //   node bench/same.js <cache file> <corpus> <index> '{analyse options}'
 const fs = require('node:fs'), v8 = require('node:v8'), path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const B = 'C:/Perso/IrishMusicExperiments/transcription-bench';
+const B = `${WS}/transcription-bench`;
 const C = require(`${B}/lib/common`);
 const corpora = require(`${B}/lib/corpora`);
 const { userItems } = require(`${B}/lib/user`);

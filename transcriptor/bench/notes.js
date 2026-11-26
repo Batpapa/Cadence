@@ -1,4 +1,5 @@
 'use strict';
+const { REPO, WS } = require('./paths');
 // Note judge on tuneset: our decoder's notes against the annotation (played notes, repeats
 // merged in it, so our notes are merged the same way before matching): F-measure in pitch
 // classes and in exact pitches (octaves by transcription.ts's Viterbi), within 50 and 25 ms,
@@ -7,7 +8,7 @@
 //   node bench/notes.js '{decoder options}' [label]
 const fs = require('node:fs'), v8 = require('node:v8'), path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const BENCH = 'C:/Perso/IrishMusicExperiments/transcription-bench';
+const BENCH = `${WS}/transcription-bench`;
 const C = require(`${BENCH}/lib/common`);
 const { tunesetItems } = require(`${BENCH}/lib/corpora`);
 const opts = JSON.parse(process.argv[2] || '{}');
@@ -26,7 +27,7 @@ const merge = (notes) => { const out = []; for (const n of notes) { const l = ou
 
 (async () => {
   const D = await import(pathToFileURL(path.join(__dirname, '../src/decoder.ts')).href);
-  const T = await import(pathToFileURL('C:/Perso/IrishMusicExperiments/Cadence/src/session/recognition/transcription.ts').href);
+  const T = await import(pathToFileURL(`${REPO}/src/session/recognition/transcription.ts`).href);
   const items = tunesetItems();
   const ffCache = v8.deserialize(fs.readFileSync(`${BENCH}/cache/sweep/tuneset.v8`));
   fs.mkdirSync(path.join(__dirname, '../out'), { recursive: true });

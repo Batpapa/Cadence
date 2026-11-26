@@ -1,9 +1,10 @@
 'use strict';
+const { REPO, WS } = require('./paths');
 // The Rust analysis (rust/pkg-node) against spectrum.ts on 60 s of a session: speed and the
 // largest differences, for the short window (flux, acf) and the long one (peaks).
 const path = require('node:path'), { pathToFileURL } = require('node:url');
-const C = require('C:/Perso/IrishMusicExperiments/transcription-bench/lib/common');
-const { sessionItems } = require('C:/Perso/IrishMusicExperiments/transcription-bench/lib/corpora');
+const C = require(`${WS}/transcription-bench/lib/common`);
+const { sessionItems } = require(`${WS}/transcription-bench/lib/corpora`);
 const R = require(path.join(__dirname, '../rust/' + (process.env.PKG || 'pkg-node') + '/cadence_transcriptor.js'));
 (async () => {
   const S = await import(pathToFileURL(path.join(__dirname, '../src/spectrum.ts')).href);

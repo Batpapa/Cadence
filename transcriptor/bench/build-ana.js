@@ -1,8 +1,9 @@
 'use strict';
+const { REPO, WS } = require('./paths');
 // Analyses of a corpus cached for the benches: node bench/build-ana.js <corpus> <prefix> '{analyse options}' [step]
 const fs = require('node:fs'), v8 = require('node:v8'), path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const B = 'C:/Perso/IrishMusicExperiments/transcription-bench';
+const B = `${WS}/transcription-bench`;
 const C = require(`${B}/lib/common`);
 const corpora = require(`${B}/lib/corpora`);
 const { userItems } = require(`${B}/lib/user`);

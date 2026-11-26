@@ -1,9 +1,10 @@
 'use strict';
+const { REPO, WS } = require('./paths');
 // Notes decoded from the TypeScript analysis and from the Rust one, on session excerpts:
 // how many are the same (class, onset within 10 ms), and the time each takes.
 const path = require('node:path'), { pathToFileURL } = require('node:url');
-const C = require('C:/Perso/IrishMusicExperiments/transcription-bench/lib/common');
-const { sessionItems } = require('C:/Perso/IrishMusicExperiments/transcription-bench/lib/corpora');
+const C = require(`${WS}/transcription-bench/lib/common`);
+const { sessionItems } = require(`${WS}/transcription-bench/lib/corpora`);
 const { nativeAnalyse } = require('./native');
 (async () => {
   const D = await import(pathToFileURL(path.join(__dirname, '../src/decoder.ts')).href);

@@ -1,14 +1,15 @@
 'use strict';
+const { REPO, WS } = require('./paths');
 // Per tuneset tune: share of annotated notes whose class is found 50-150 ms away (not
 // within 50), ours and FolkFriend's, and our signed median offset — a tune where both are
 // late in the same way points at its annotation.
 const fs = require('node:fs'), v8 = require('node:v8'), path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const B = 'C:/Perso/IrishMusicExperiments/transcription-bench';
+const B = `${WS}/transcription-bench`;
 const { tunesetItems } = require(`${B}/lib/corpora`);
 (async () => {
   const D = await import(pathToFileURL(path.join(__dirname, '../src/decoder.ts')).href);
-  const T = await import(pathToFileURL('C:/Perso/IrishMusicExperiments/Cadence/src/session/recognition/transcription.ts').href);
+  const T = await import(pathToFileURL(`${REPO}/src/session/recognition/transcription.ts`).href);
   const o = JSON.parse(process.argv[2] || '{}');
   const items = tunesetItems(), ff = v8.deserialize(fs.readFileSync(`${B}/cache/sweep/tuneset.v8`));
   items.forEach((item, i) => {

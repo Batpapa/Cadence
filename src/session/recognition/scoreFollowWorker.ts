@@ -6,7 +6,8 @@ import { getSettingContour } from './indexStore';
 import { FF_PCM_WINDOW } from '../sessionConfig';
 import { Novelty, estimateRate } from '../liveTempo';
 import { transcribe, quaverContour, keyOfAbc, makeKey, writeAbc } from './transcription';
-import { hear, gridNovelty, asClassNotes, classView, CLEAN_VIEW, resample, RATE } from './transcriptor';
+import { hear, gridNovelty, asClassNotes, resample, RATE } from '../../../transcriptor/src/decoder.ts';
+import { FolkFriendView } from './folkfriendView';
 import { initTranscriptor } from './transcriptorInit';
 
 // ── Score following worker ───────────────────────────────────────────────────
@@ -366,29 +367,24 @@ async function writeOut(pcm: Float32Array, rate: number, onRatio: (r: number) =>
   await engine(); // the module's init
   await initTranscriptor(); // the notes' analysis in WebAssembly (else in TypeScript)
   const f = new FolkFriendWASM();
-  // FolkFriend's cleaned class energies too: the decoder's extra view (transcriptor.ts's
-  // classView — the regime the experimental recognition decodes in as well)
-  const v = new FolkFriendWASM();
+  // FolkFriend's cleaned class energies too: the decoder's extra view (folkfriendView.ts —
+  // the regime the recognition decodes in as well)
+  const view = new FolkFriendView(rate);
   try {
     f.set_sample_rate(rate);
     f.keep_magnitudes();
-    v.set_sample_rate(rate);
-    v.enable_clean_features();
-    const at = f.alloc_single_pcm_window(), vat = v.alloc_single_pcm_window();
+    const at = f.alloc_single_pcm_window();
     const n = Math.floor(pcm.length / FF_PCM_WINDOW);
     for (let i = 0; i < n; i++) {
-      const frame = pcm.subarray(i * FF_PCM_WINDOW, (i + 1) * FF_PCM_WINDOW);
-      f.get_allocated_pcm_window(at).set(frame);
+      f.get_allocated_pcm_window(at).set(pcm.subarray(i * FF_PCM_WINDOW, (i + 1) * FF_PCM_WINDOW));
       f.feed_single_pcm_window(at);
-      v.get_allocated_pcm_window(vat).set(frame);
-      v.feed_single_pcm_window(vat);
-      if ((i & 255) === 0) onRatio((0.25 * i) / n);
+      if ((i & 255) === 0) onRatio((0.2 * i) / n);
     }
-    const extra = classView(v.take_clean_features(CLEAN_VIEW.drone, false, CLEAN_VIEW.stride, 0));
+    const extra = view.of(pcm);
     // FolkFriend's 48-note energies for the tempo, the metre and the key; the notes, and an
-    // onset function for the grid, from the transcription's own decoder (transcriptor.ts:
-    // onsets every 5 ms, pitch read over whole notes — cadence-transcriptor's JOURNAL.md has
-    // every measurement)
+    // onset function for the grid, from the transcription's own decoder (transcriptor/src:
+    // onsets every 5 ms, pitch read over whole notes — the transcriptor's research journal
+    // (outside the repo) has every measurement)
     const features = f.take_magnitude_features();
     onRatio(0.3);
     const fps = rate / FF_PCM_WINDOW;
@@ -405,7 +401,7 @@ async function writeOut(pcm: Float32Array, rate: number, onRatio: (r: number) =>
     return writeAbc(tune, key);
   } finally {
     f.free();
-    v.free();
+    view.free();
   }
 }
 
@@ -488,7 +484,7 @@ ctx.onmessage = (e) => {
         const d = await decodeSpan(msg.audio, 0, duration, r => progress('decode', r));
         if (!d) { ctx.postMessage({ type: 'failed', reason: 'no_audio' }); return; }
         progress('listen', 0);
-        // at the rate the transcription was measured at (transcriptor.ts's RATE)
+        // at the rate the transcription was measured at (transcriptor/src/decoder.ts's RATE)
         const abc = await writeOut(resample(d.pcm, d.rate, RATE), RATE, r => progress('listen', r));
         if (!abc) { ctx.postMessage({ type: 'failed', reason: 'no_contour' }); return; }
         ctx.postMessage({ type: 'transcribed', abc });

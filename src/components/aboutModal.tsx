@@ -7,7 +7,7 @@ import { ShareAppBody } from './shareAppModal';
 import { APP_BUILD, commitUrl } from '../services/updateService';
 import { isNative } from '../native/platform';
 import { devMode, toggleDevMode } from '../services/devMode';
-import { experimentalRecognition, toggleExperimentalRecognition } from '../services/experimentalRecognition';
+import { folkfriendDecoder, toggleFolkFriendDecoder } from '../services/recognitionEngine';
 import { pickFiles } from '../services/filePicker';
 
 // ── "About Cadence" ──────────────────────────────────────────────────────────
@@ -71,7 +71,7 @@ function VersionLine() {
       {/* Said where it was switched on: the only sign, and the only way to
           know the next seven taps will switch it off. */}
       {devMode.value && <span class="text-warn">{' · '}{t('about.devMode')}</span>}
-      {experimentalRecognition.value && <span class="text-warn">{' · '}{t('about.experimentalRecognition')}</span>}
+      {folkfriendDecoder.value && <span class="text-warn">{' · '}{t('about.folkfriendDecoder')}</span>}
     </p>
   );
 }
@@ -101,27 +101,27 @@ function useTranscribeTaps(): () => void {
   };
 }
 
-/** Taps in a row on the FolkFriend line that switch the experimental
- *  recognition — see experimentalRecognition.ts. Not the ones on its link. */
-const EXPERIMENTAL_TAPS = 5;
+/** Taps in a row on the FolkFriend line that switch the recognition to
+ *  FolkFriend's decoder and back — see recognitionEngine.ts. Not the ones on its link. */
+const FOLKFRIEND_TAPS = 5;
 
-function useExperimentalTaps(): (e: MouseEvent) => void {
+function useFolkFriendTaps(): (e: MouseEvent) => void {
   const taps = useRef({ n: 0, at: 0 });
   return (e: MouseEvent) => {
     if ((e.target as Element).closest('a')) return;
     const now = performance.now();
     taps.current.n = now - taps.current.at < DEV_TAP_GAP_MS ? taps.current.n + 1 : 1;
     taps.current.at = now;
-    if (taps.current.n < EXPERIMENTAL_TAPS) return;
+    if (taps.current.n < FOLKFRIEND_TAPS) return;
     taps.current.n = 0;
-    toggleExperimentalRecognition();
+    toggleFolkFriendDecoder();
   };
 }
 
 function AboutBody() {
   const brand = useBrandColor();
   const onLogoTap = useTranscribeTaps();
-  const onFolkFriendTap = useExperimentalTaps();
+  const onFolkFriendTap = useFolkFriendTaps();
   return (
     <div class="space-y-5">
       <div class="flex items-center gap-3">
@@ -147,7 +147,7 @@ function AboutBody() {
         <AboutLine textKey="settings.aboutLine2" />
         <AboutLine textKey="settings.aboutLine3" href="https://github.com/Batpapa/Cadence" />
         {/* FolkFriend attribution (GPLv3) — required by the vendored recognition engine.
-            Five taps on it switch the experimental recognition (useExperimentalTaps). */}
+            Five taps on it switch the recognition to FolkFriend's decoder (useFolkFriendTaps). */}
         <p class={`text-xs text-muted ${isNative() ? 'select-none' : ''}`} onClick={onFolkFriendTap}>
           {t('settings.aboutFolkFriend')}{' '}
           <a href="https://github.com/TomWyllie/folkfriend" target="_blank" rel="noopener" class="text-accent hover:underline">github.com/TomWyllie/folkfriend (GPLv3)</a>

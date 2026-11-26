@@ -149,7 +149,7 @@ them are written down.
 | `set_note_filter(power, frames)` | 0.10, 3 | (default) | `decode/contour.rs` — notes dropped before quantisation |
 | `set_tempo_model(intercept, slope)` | 3.0, 0.5 | (default) | `decode/contour.rs` — per-note score of the tempo selector |
 
-Why these values (full study: `experiments/ranking-study/CAMPAIGN_V3.md`):
+Why these values (full study: the ranking study's campaign notes (outside the repo)):
 * **Tempo cap.** The selector scores rounding error in frames, so a faster candidate
   tempo — a finer grid — always fits better, and it overshoots: on the same audio,
   when allowed to go faster the right tune's rank got worse 97 times for 20 better.

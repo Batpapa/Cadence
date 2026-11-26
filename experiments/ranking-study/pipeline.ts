@@ -223,7 +223,7 @@ export function decode(
     ...cfg,
     // Explicit, never inherited: production now sets absentObservationRatio, and
     // this harness must keep meaning what it meant when every figure in
-    // CAMPAIGN_V3.md was measured — absentRatio 0 = the plain epsilon floor.
+    // the campaign notes, outside the repo was measured — absentRatio 0 = the plain epsilon floor.
     // (It used to be emulated through observationScoreFn; the detector now has
     // the field itself, with the identical formula.)
     absentObservationRatio: absentRatio > 0 ? absentRatio : undefined,

@@ -115,10 +115,9 @@ under the previous detector configuration. Do not compare a number across that
 boundary without re-running the older measurement.
 
 The previous files are not lost: git history holds them, and the ranking study
-kept a copy (`experiments/ranking-study/v3/install-backup/test-fixtures-sessions/`,
-untracked). Before replacing the committed files, the regeneration was checked
+kept a copy (with its campaign files, outside the repo). Before replacing the committed files, the regeneration was checked
 against an independent one made by the study's own harness with the same engine
-build and calls (`experiments/ranking-study/v3/fixtures-prod/`).
+build and calls (also kept outside the repo).
 
 ## Window geometry — read this before running any backtest
 

@@ -1,18 +1,20 @@
 'use strict';
+const { REPO, WS } = require('./paths');
 // Cadence's scoreFollowWorker.writeOut, step for step in Node, with the files Cadence ships
-// (src/session/recognition/transcriptor.ts and transcription.ts, FolkFriend's Node build):
+// (transcriptor/src and src/session/recognition/transcription.ts, FolkFriend's Node build):
 // the ABC of an audio file, and the time each stage takes.
 //   node bench/worker-e2e.js <audio> [native]
 const path = require('node:path'), { pathToFileURL } = require('node:url');
-const C = require('C:/Perso/IrishMusicExperiments/transcription-bench/lib/common');
-const { FolkFriendWASM } = require('C:/Perso/IrishMusicExperiments/folkfriend-src/rust/pkg-node-transcribe-simd/folkfriend.js');
-const REC = 'C:/Perso/IrishMusicExperiments/Cadence/src/session/recognition';
+const C = require(`${WS}/transcription-bench/lib/common`);
+const { FolkFriendWASM } = require(`${WS}/folkfriend-src/rust/pkg-node-transcribe-simd/folkfriend.js`);
+const REC = `${REPO}/src/session/recognition`;
 const CH = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV';
 (async () => {
-  const X = await import(pathToFileURL(`${REC}/transcriptor.ts`).href);
+  const X = await import(pathToFileURL(path.join(__dirname, '../src/decoder.ts')).href);
+  const V = await import(pathToFileURL(path.join(__dirname, '../src/folkfriendView.ts')).href);
   // OLD=1: the committed chain (FolkFriend's notes and novelty, transcription.ts as committed)
-  const T = await import(pathToFileURL(process.env.OLD ? 'C:/Perso/IrishMusicExperiments/transcription-bench/variants/head-src.ts' : `${REC}/transcription.ts`).href);
-  const L = await import(pathToFileURL('C:/Perso/IrishMusicExperiments/Cadence/src/session/liveTempo.ts').href);
+  const T = await import(pathToFileURL(process.env.OLD ? `${WS}/transcription-bench/variants/head-src.ts` : `${REC}/transcription.ts`).href);
+  const L = await import(pathToFileURL(`${REPO}/src/session/liveTempo.ts`).href);
   if (process.argv[3] === 'native') X.useAnalysis(require('./native').nativeAnalyse());
   // RATE: decoded at that rate; TO48=1: then brought to 48 kHz by linear interpolation
   let rate = Number(process.env.RATE || 48000), pcm = C.decode(process.argv[2], { rate, ...(process.env.DUR ? { start: 0, dur: Number(process.env.DUR) } : {}) });
@@ -34,7 +36,7 @@ const CH = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV';
     v.set_sample_rate(rate); v.enable_clean_features();
     const vat = v.alloc_single_pcm_window();
     for (let i = 0; i + 1024 <= pcm.length; i += 1024) { v.get_allocated_pcm_window(vat).set(pcm.subarray(i, i + 1024)); v.feed_single_pcm_window(vat); }
-    extra = X.classView(v.take_clean_features(X.CLEAN_VIEW.drone, false, X.CLEAN_VIEW.stride, 0));
+    extra = V.classView(v.take_clean_features(V.CLEAN_VIEW.drone, false, V.CLEAN_VIEW.stride, 0));
     v.free();
   }
   const t1 = performance.now();

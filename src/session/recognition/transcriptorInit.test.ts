@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import init from '../../../vendor/cadence-transcriptor/cadence_transcriptor.js';
-import { transcribeNotes, useAnalysis } from './transcriptor';
+import { transcribeNotes, useAnalysis } from '../../../transcriptor/src/decoder.ts';
 import { nativeAnalyse } from './transcriptorInit';
 
 const RATE = 48000;
 
-/** A tune of harmonic tones with a little noise (as transcriptor.test.ts). */
+/** A tune of harmonic tones with a little noise (as transcriptor/src/transcriptor.test.ts). */
 function synth(notes: [number, number, number][], seconds: number): Float32Array {
   const out = new Float32Array(Math.round(seconds * RATE));
   let seed = 3;

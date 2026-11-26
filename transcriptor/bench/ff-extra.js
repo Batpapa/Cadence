@@ -1,11 +1,12 @@
 'use strict';
+const { REPO, WS } = require('./paths');
 // FolkFriend's cleaned energies of each item of a transcription-bench corpus, folded to 12 classes —
 // the decoder's `extra` class view (option extraWeight). Cached in out/<tag>-<corpus>-<i>.v8, read
 // by to-sweep.js when EXTRA_ANA=<tag>.
 //   EXTRA='{"drone":469,"stride":47,"topk":5}' node bench/ff-extra.js <corpus> [tag=ffx]
 const fs = require('node:fs'), v8 = require('node:v8'), path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const BENCH = 'C:/Perso/IrishMusicExperiments/transcription-bench';
+const BENCH = `${WS}/transcription-bench`;
 const C = require(`${BENCH}/lib/common`);
 const corpora = require(`${BENCH}/lib/corpora`);
 const { userItems } = require(`${BENCH}/lib/user`);

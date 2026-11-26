@@ -1,11 +1,12 @@
 'use strict';
+const { REPO, WS } = require('./paths');
 // Frame-level judge: on tuneset, at every frame where an annotated note sounds, is the
 // loudest pitch class the note's? (raw class accuracy of melody extraction). Ours against
 // FolkFriend's 48-note features folded to classes (the current decoder's input).
 //   node bench/frames.js '{"salience": {...}, "analysis": {...}}'
 const fs = require('node:fs'), v8 = require('node:v8'), path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const BENCH = 'C:/Perso/IrishMusicExperiments/transcription-bench';
+const BENCH = `${WS}/transcription-bench`;
 const C = require(`${BENCH}/lib/common`);
 const { tunesetItems } = require(`${BENCH}/lib/corpora`);
 const opts = JSON.parse(process.argv[2] || '{}');

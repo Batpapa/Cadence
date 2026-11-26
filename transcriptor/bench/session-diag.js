@@ -1,13 +1,14 @@
 'use strict';
+const { REPO, WS } = require('./paths');
 // Sessions: notes a second (ours, FolkFriend) and agreement with the settings in classes and
 // in exact pitches (merged sequences), to tell octave trouble from note trouble.
 const fs = require('node:fs'), v8 = require('node:v8'), { pathToFileURL } = require('node:url');
-const B = 'C:/Perso/IrishMusicExperiments/transcription-bench';
+const B = `${WS}/transcription-bench`;
 const C = require(`${B}/lib/common`);
 const { sessionItems } = require(`${B}/lib/corpora`);
 const { classShift } = require(`${B}/lib/sessionScore`);
 (async () => {
-  const T = await import(pathToFileURL(process.env.TS || 'C:/Perso/IrishMusicExperiments/Cadence/src/session/recognition/transcription.ts').href);
+  const T = await import(pathToFileURL(process.env.TS || `${REPO}/src/session/recognition/transcription.ts`).href);
   const items = sessionItems();
   const ours = v8.deserialize(fs.readFileSync(`${B}/cache/sweep/session${process.env.TAG || '-ct'}.v8`)), ff = v8.deserialize(fs.readFileSync(`${B}/cache/sweep/session.v8`));
   const agg = { o: { n: 0, cls: 0, ex: 0 }, f: { n: 0, cls: 0, ex: 0 } };

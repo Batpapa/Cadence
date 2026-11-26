@@ -13,7 +13,6 @@ import type { BoundAligner } from './boundSuggestClient';
 import type { FinishingState } from './ui/finishingModal';
 import { NoveltyStore, type TempoReading } from './liveTempo';
 import { withTempo, DetectionTempoCache } from './tempoSummary';
-import { experimentalRecognition } from '../services/experimentalRecognition';
 
 /** How long the end of an import waits for the bounds still being put on
  *  their passes — a second or two each, measured — before saving without
@@ -205,7 +204,7 @@ export class ImportSession {
         onDetections: events => this.applyEvents(events),
         onError: message => this.cb.onError?.(message),
         onTempo: (reading, novelty, at) => { this.tempo.push(reading); this.novelty.write(at, novelty); },
-      }, { hopS: HOP_S_IMPORT, tempo: true, transcriptor: experimentalRecognition.value });
+      }, { hopS: HOP_S_IMPORT, tempo: true });
       const version = await this.recognition.ready;
       console.debug(`[import] engine ready (FolkFriend ${version})`);
 

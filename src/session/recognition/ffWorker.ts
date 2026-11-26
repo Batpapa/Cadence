@@ -7,25 +7,27 @@ import { abcContour } from './abcContour';
 import { kvGet, kvSet } from '../db';
 import { IncrementalViterbiSegmenter } from './viterbiSegmenter';
 import { PlayedPitch } from './playedPitch';
-import { pitchClassesForDisplay } from './contourShift';
-import { recognitionContour, classView, CLEAN_VIEW, resample, RATE } from './transcriptor';
 import { initTranscriptor } from './transcriptorInit';
-import { normalizeDisplayName } from '../../utils';
-import { signedKeyOffset, type WindowResult, type WindowCandidate, type WindowDebugFeatures, type NoteAndTempoFeatures, type DetectionEvent } from '../model';
+import { configureForQuery, TuneQuery } from './folkfriendQuery';
+import { FolkFriendEngine } from './folkfriendEngine';
+import { TranscriptorEngine } from './transcriptorEngine';
+import type { RecognitionEngineId, WindowEngine } from './windowEngine';
+import type { WindowResult, DetectionEvent } from '../model';
 import { TempoTracker, type TempoReading } from '../liveTempo';
 import { FEATURE_PITCHES } from '../scoreFollow';
-import {
-  ANALYSIS_HOP_S, ANALYSIS_WINDOW_S, FF_PCM_WINDOW, DEBUG_LIVE_AUDIO,
-  FF_TEMPO_MIN_BPM, FF_TEMPO_MAX_BPM, FF_QUERY_REPASS_SIZE, FF_MIN_QUERY_LENGTH,
-} from '../sessionConfig';
+import { ANALYSIS_HOP_S, ANALYSIS_WINDOW_S, FF_PCM_WINDOW, DEBUG_LIVE_AUDIO } from '../sessionConfig';
 
-// ── FolkFriend recognition worker ─────────────────────────────────────────────
-// Owns the WASM instance, the tune index, the PCM ring buffer and the
+// ── Recognition worker ────────────────────────────────────────────────────────
+// Owns the WASM instance and the tune index, the PCM ring buffer and the
 // incremental Viterbi detector (viterbiSegmenter.ts). PCM chunks arrive (from
 // the audio worklet's MessagePort or the main thread); every ANALYSIS_HOP_S of
-// new signal, the last ANALYSIS_WINDOW_S are transcribed and queried.
+// new signal, the last ANALYSIS_WINDOW_S are heard by the ENGINE chosen at init
+// (windowEngine.ts): transcriptor/'s note decoder by default since 2026-11-26
+// (transcriptorEngine.ts), or FolkFriend's own decoder, kept to compare with
+// (folkfriendEngine.ts, services/recognitionEngine.ts). Both query the index
+// the same way (folkfriendQuery.ts).
 //
-// ── The engine: pitch classes, whatever the key (2026-11-07) ──
+// ── The index and FolkFriend's decoder: pitch classes, whatever the key (2026-11-07) ──
 // The recognition instance transcribes and compares PITCH CLASSES, octave
 // forgotten (folkfriend-src feature/pitch_class.rs): each window's spectra lose
 // their percussive part (harmonic/percussive separation) and their constant
@@ -52,18 +54,6 @@ import {
 // the repo) and experiments/session-bench. Score following and the tempo
 // tracker run their own instances in the default mode.
 
-interface RawQueryRecord {
-  setting_id: string;
-  setting: { tune_id: string; meter: string; mode: string; abc: string; dance: string; contour: string };
-  display_name: string;
-  score: number;
-  /** The key it was found in: semitones above the written key, 0-11. */
-  transpose?: number;
-  /** The tune's other aligned (setting, transposition 0-11, score), best first
-   *  (2026-11-08) — read by PlayedPitch. */
-  other_keys?: [string, number, number][];
-}
-
 export type FFWorkerRequest =
   /** `tempo`: follow the tempo of the audio too (liveTempo.ts) — every
    *  analysis, live or file; not the TheSession widget's finder. */
@@ -71,7 +61,8 @@ export type FFWorkerRequest =
    *  message follows, to be merged before the index loads; `theSession` —
    *  TheSession's index, loaded (downloaded the first time) only when on;
    *  `sourceOrder` — the indexes' sources in the order that wins ties. */
-  | { type: 'init'; sampleRate: number; hopS?: number; tempo?: boolean; transcriptor?: boolean; cards: boolean; theSession: boolean; sourceOrder: string[] }
+  /** `engine`: what hears the windows (windowEngine.ts), the transcriptor's by default. */
+  | { type: 'init'; sampleRate: number; hopS?: number; tempo?: boolean; engine?: RecognitionEngineId; cards: boolean; theSession: boolean; sourceOrder: string[] }
   /** The user's tune cards (cardIndex.ts), once the page has gathered them. */
   | { type: 'cards'; tunes: CardIndexTune[] }
   | { type: 'worklet-port'; port: MessagePort }
@@ -101,21 +92,11 @@ const ctx = self as unknown as {
 };
 
 let ff: FolkFriendWASM | null = null;
-let pcmPtr = 0;
 let sampleRate = 48000;
 let hopS = ANALYSIS_HOP_S;
 let segmenter = new IncrementalViterbiSegmenter(hopS);
-// The candidates' played pitch (playedPitch.ts), from the loaded index's
-// settings — one per index load, it caches the tunes it has met.
-let playedPitch: PlayedPitch | null = null;
-/** The hidden experimental recognition (experimentalRecognition.ts): every
- *  window transcribed by cadence-transcriptor instead of FolkFriend
- *  (analyzeWithTranscriptor). Set by `init`, file imports only. */
-let withTranscriptor = false;
-/** Its FolkFriend instance for the cleaned energies (enable_clean_features),
- *  fed at the transcriptor's rate — the query stays `ff`'s. */
-let ffView: FolkFriendWASM | null = null;
-let viewPtr = 0;
+/** What hears the windows (windowEngine.ts), made once the index is loaded. */
+let engine: WindowEngine | null = null;
 
 // Ring buffer holding the last ANALYSIS_WINDOW_S seconds (plus slack).
 let ring: Float32Array = new Float32Array(0);
@@ -283,13 +264,14 @@ async function mergeCardIndex(indexData: { settings: Record<string, unknown>; al
   }
 }
 
-async function handleInit(sr: number, hop: number | undefined, tempo: boolean | undefined, transcriptor: boolean | undefined, theSession: boolean, sourceOrder: string[]): Promise<void> {
+async function handleInit(sr: number, hop: number | undefined, tempo: boolean | undefined, engineId: RecognitionEngineId, theSession: boolean, sourceOrder: string[]): Promise<void> {
   sampleRate = sr;
   hopS = hop ?? ANALYSIS_HOP_S;
-  withTranscriptor = !!transcriptor;
-  if (withTranscriptor) {
+  if (engineId === 'transcriptor') {
     const native = await initTranscriptor();
-    console.info(`[recognition] reconnaissance expérimentale : cadence-transcriptor (${native ? 'WebAssembly' : 'TypeScript'})`);
+    console.info(`[recognition] décodeur : transcriptor (${native ? 'WebAssembly' : 'TypeScript'})`);
+  } else {
+    console.info('[recognition] décodeur : FolkFriend (comparaison)');
   }
   // The SIMD build where the browser has it (folkfriendInit.ts).
   const usingSimd = await initFolkFriend();
@@ -299,24 +281,12 @@ async function handleInit(sr: number, hop: number | undefined, tempo: boolean | 
   // about speed.
   console.info(`[folkfriend] moteur ${usingSimd ? 'SIMD (rapide)' : 'scalaire (repli — navigateur sans SIMD)'}`);
   ff = new FolkFriendWASM();
+  // the rate FolkFriend's own decoder hears at (the comparison engine)
   ff.set_sample_rate(sampleRate);
-  // The engine ships upstream defaults; Cadence's tuned values live in
-  // sessionConfig.ts, with the measurements behind them.
-  ff.set_tempo_range(FF_TEMPO_MIN_BPM, FF_TEMPO_MAX_BPM);
-  ff.set_num_repass(FF_QUERY_REPASS_SIZE);
-  ff.set_min_query_length(FF_MIN_QUERY_LENGTH);
   // Before the index is loaded: it is then folded as it arrives (see the top
   // of this file). Only this instance — tempoFf below must keep serving
   // 48-note take_features.
-  ff.set_pitch_class_mode();
-  ff.set_any_pitch(true);
-  pcmPtr = ff.alloc_single_pcm_window();
-  if (withTranscriptor) {
-    ffView = new FolkFriendWASM();
-    ffView.set_sample_rate(RATE);
-    ffView.enable_clean_features();
-    viewPtr = ffView.alloc_single_pcm_window();
-  }
+  configureForQuery(ff);
   if (tempo) {
     tempoFf = new FolkFriendWASM();
     tempoFf.set_sample_rate(sampleRate);
@@ -347,11 +317,15 @@ async function handleInit(sr: number, hop: number | undefined, tempo: boolean | 
   // card, and represents the tune when it is one (the user, 2026-11-16).
   ff.set_source_order(sourceOrder);
   ff.load_index_from_json_obj(indexData);
-  const engine = ff;
-  playedPitch = new PlayedPitch(tuneId => {
-    const raw = JSON.parse(engine.settings_from_tune_id(tuneId)) as Array<[string, { contour: string }]> | { error: string };
+  const loaded = ff;
+  // The candidates' played pitch (playedPitch.ts), from the loaded index's
+  // settings — one per index load, it caches the tunes it has met.
+  const playedPitch = new PlayedPitch(tuneId => {
+    const raw = JSON.parse(loaded.settings_from_tune_id(tuneId)) as Array<[string, { contour: string }]> | { error: string };
     return Array.isArray(raw) ? raw.map(([id, s]) => [id, s.contour] as [string, string]) : [];
   });
+  const query = new TuneQuery(loaded, playedPitch);
+  engine = engineId === 'folkfriend' ? new FolkFriendEngine(loaded, query) : new TranscriptorEngine(sampleRate, query);
 
   ring = new Float32Array(Math.ceil((ANALYSIS_WINDOW_S + hopS) * sampleRate));
   ringWrite = 0;
@@ -359,6 +333,7 @@ async function handleInit(sr: number, hop: number | undefined, tempo: boolean | 
   lastAnalysisAt = 0;
   liveWallClockAnchorMs = null;
   segmenter = new IncrementalViterbiSegmenter(hopS);
+  engine?.reset();
 
   post({ type: 'ready', version: ff.version() });
 }
@@ -382,120 +357,9 @@ function tailOfRing(n: number): Float32Array {
   return out;
 }
 
-/** Query the tune index with a contour; empty list when the query errors out. */
-// The Viterbi detector builds a per-tune score timeline across the whole
-// recording, so it needs more headroom than a single online winner would.
-// Started at 20 (2026-08-11); dropped to 10 the same day once a real dump
-// showed a noisy window can put 8 different tuneIds above threshold at once —
-// more candidates just means more of them clear the floor, not more signal
-// (minCandidateProbability + the Viterbi decode itself handle whatever gets
-// through regardless, but there's no reason to feed either more noise than
-// needed).
-const TOP_N_CANDIDATES = 10;
-
-/** Debug transcribe response (2026-08-18): `transcribe_pcm_buffer_debug()`
- *  replaces `transcribe_pcm_buffer()` — same underlying computation (see
- *  folkfriend-src's contour_from_notes, which always builds this data
- *  internally regardless of which wrapper is called), just not discarded
- *  before crossing the WASM boundary. Zero extra engine cost. */
-type RawTranscribeDebug = { contour: string; features: NoteAndTempoFeatures } | { error: string; features: null };
-
-function mapCandidates(raw: RawQueryRecord[], tuning: number | undefined): WindowCandidate[] {
-  return raw.map(r => {
-    const c: WindowCandidate = {
-      tuneId: r.setting.tune_id,
-      settingId: r.setting_id,
-      displayName: normalizeDisplayName(r.display_name),
-      dance: r.setting.dance,
-      meter: r.setting.meter,
-      score: r.score,
-    };
-    // Stored only when off the written key: most windows are not, and every
-    // window of an analysis is kept.
-    const transpose = signedKeyOffset(r.transpose ?? 0);
-    if (transpose !== 0) c.transpose = transpose;
-    playedPitch?.annotate(c, r, tuning);
-    return c;
-  });
-}
-
-/** Candidate query (2026-08-18): plain `run_transcription_query()` — NOT the
- *  `_debug` variant. Same call as before this whole debug-instrumentation
- *  change: WASM-side truncation to 20 (lib.rs), then sliced to TOP_N_CANDIDATES
- *  below. The untruncated ~100-candidate `_debug` query was tried first and
- *  dropped (explicit user call, "c'est un peu beaucoup") — it roughly
- *  doubled per-window IndexedDB storage for no feature the 2026-08-17/18
- *  noise study actually needed (every feature there — margin,
- *  candidatesAbove20/30/40/50, sum_top5/10 — only ever looks at the top 10). */
-function queryContour(f: FolkFriendWASM, contour: string, tuning: number | undefined): WindowCandidate[] {
-  const raw = JSON.parse(f.run_transcription_query(contour)) as RawQueryRecord[] | { error: string };
-  if (!Array.isArray(raw)) return [];
-  // cut before mapping: the played pitch reads the engine's settings of each tune
-  return mapCandidates(raw.slice(0, TOP_N_CANDIDATES), tuning);
-}
-
-/** The experimental recognition (experimentalRecognition.ts): the window heard
- *  by cadence-transcriptor's decoder alone — in the regime it writes ABC in, with
- *  FolkFriend's cleaned class energies of the same samples as one more view
- *  (transcriptor.ts's classView) — and its contour queried as FolkFriend's would
- *  be; the pitches read off the decoder's own tuning. Measured in transcriptor.ts
- *  (recognitionContour). At the rate the decoder was measured at. */
-function analyzeWithTranscriptor(pcm: Float32Array, tStart: number, tEnd: number): { result: WindowResult; abc: string | null } {
-  const f = ff!, v = ffView!;
-  const x = sampleRate === RATE ? pcm : resample(pcm, sampleRate, RATE);
-  for (let i = 0; i + FF_PCM_WINDOW <= x.length; i += FF_PCM_WINDOW) {
-    v.get_allocated_pcm_window(viewPtr).set(x.subarray(i, i + FF_PCM_WINDOW));
-    v.feed_single_pcm_window(viewPtr);
-  }
-  const extra = classView(v.take_clean_features(CLEAN_VIEW.drone, false, CLEAN_VIEW.stride, 0));
-  const { contour, tuning } = recognitionContour(x, RATE, extra);
-  const candidates = contour ? queryContour(f, contour, tuning) : [];
-  let abc: string | null = null;
-  if (contour) try { abc = f.contour_to_abc(pitchClassesForDisplay(contour)); } catch { /* cosmetic only */ }
-  const debug: WindowDebugFeatures = { contour: contour || null, octaveShiftApplied: 0, features: null };
-  return { result: { tWindowStart: tStart, tWindowEnd: tEnd, empty: candidates.length === 0, candidates, debug }, abc };
-}
-
-/** Feed a PCM signal into FolkFriend and return the analysis of it. */
+/** The window heard by the engine chosen at init. */
 function analyzeSignal(pcm: Float32Array, tStart: number, tEnd: number): { result: WindowResult; abc: string | null } {
-  if (withTranscriptor) return analyzeWithTranscriptor(pcm, tStart, tEnd);
-  const f = ff!;
-  // transcribe_pcm_buffer_debug consumes the internal buffer, so every
-  // analysis re-feeds its full window; flush first for safety.
-  f.flush_pcm_buffer();
-  const frames = Math.floor(pcm.length / FF_PCM_WINDOW);
-  for (let i = 0; i < frames; i++) {
-    // Re-acquire the view before EVERY write: it goes stale if WASM memory grows.
-    const view = f.get_allocated_pcm_window(pcmPtr);
-    view.set(pcm.subarray(i * FF_PCM_WINDOW, (i + 1) * FF_PCM_WINDOW));
-    f.feed_single_pcm_window(pcmPtr);
-  }
-
-  const rawDebug = JSON.parse(f.transcribe_pcm_buffer_debug()) as RawTranscribeDebug;
-  if ('error' in rawDebug) {
-    return { result: { tWindowStart: tStart, tWindowEnd: tEnd, empty: true, candidates: [] }, abc: null };
-  }
-  const contour = rawDebug.contour;
-  const features = rawDebug.features;
-
-  // No score filtering here: the Viterbi detector applies its own candidate
-  // floor (minCandidateProbability), and the calibration dump needs the
-  // sub-floor scores to be tunable at all.
-  const candidates = queryContour(f, contour, features?.tuning);
-
-  let abc: string | null = null;
-  try { abc = f.contour_to_abc(pitchClassesForDisplay(contour)); } catch { /* cosmetic only */ }
-
-  // "Enriched top-10" (2026-08-18): candidates stay capped at TOP_N_CANDIDATES
-  // as always — debug only adds note/tempo/contour telemetry, no extra
-  // candidates, keeping the per-window storage growth to just this struct
-  // (a few hundred bytes) instead of duplicating (part of) the candidate list.
-  const debug: WindowDebugFeatures = { contour, octaveShiftApplied: 0, features };
-
-  return {
-    result: { tWindowStart: tStart, tWindowEnd: tEnd, empty: candidates.length === 0, candidates, debug },
-    abc,
-  };
+  return engine!.analyze(pcm, tStart, tEnd);
 }
 
 // Analysis triggers on signal time (accumulated samples), never the wall clock —
@@ -521,8 +385,15 @@ function maybeAnalyzeLive(): void {
 
   const { result, abc } = analyzeSignal(pcm, tStart, tEnd);
   post({ type: 'window', result, abc });
-  const events = segmenter.step(result);
+  const events = stepSegmenter(result);
   if (events.length > 0) post({ type: 'annotations', events });
+}
+
+/** The segmenter fed a window, and the engine told what it now follows. */
+function stepSegmenter(result: WindowResult): DetectionEvent[] {
+  const events = segmenter.step(result);
+  engine?.stepped(events);
+  return events;
 }
 
 function handlePcm(buffer: ArrayBuffer): void {
@@ -584,7 +455,7 @@ function handleStop(): void {
     // Kept and prepended, not dropped: step() may OPEN a detection that
     // finalize() then only closes, and an orchestrator receiving a `close` for
     // an id it never saw opened would have nothing to close.
-    tailEvents = segmenter.step(result);
+    tailEvents = stepSegmenter(result);
   }
   const tFinal = totalSamples / sampleRate;
   const events = [...tailEvents, ...segmenter.finalize()];
@@ -595,6 +466,7 @@ function handleStop(): void {
   lastAnalysisAt = 0;
   liveWallClockAnchorMs = null;
   segmenter = new IncrementalViterbiSegmenter(hopS);
+  engine?.reset();
   resetTempo();
 }
 
@@ -604,7 +476,7 @@ function onRequest(e: MessageEvent<FFWorkerRequest>): void {
     switch (msg.type) {
       case 'init':
         if (!msg.cards) receiveCards([]);
-        void handleInit(msg.sampleRate, msg.hopS, msg.tempo, msg.transcriptor, msg.theSession, msg.sourceOrder).catch(err => post({ type: 'error', message: String(err) }));
+        void handleInit(msg.sampleRate, msg.hopS, msg.tempo, msg.engine ?? 'transcriptor', msg.theSession, msg.sourceOrder).catch(err => post({ type: 'error', message: String(err) }));
         break;
       case 'cards':
         receiveCards(msg.tunes);

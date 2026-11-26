@@ -1,11 +1,12 @@
 'use strict';
+const { REPO, WS } = require('./paths');
 // Decoder settings swept in memory on tuneset's cached analyses (bench/notes.js builds them):
 // F of exact pitches and classes at 50 and 25 ms, FolkFriend's for reference.
 //   node bench/sweep.js '{"base": {...}, "grid": {"cutCost": [1, 2, 3], ...}}'   (one axis at a time)
 //   node bench/sweep.js '{"base": {...}, "sets": [{...}, ...]}'
 const fs = require('node:fs'), v8 = require('node:v8'), path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const corpora = require('C:/Perso/IrishMusicExperiments/transcription-bench/lib/corpora');
+const corpora = require(`${WS}/transcription-bench/lib/corpora`);
 process.env.FLUTE_EVERY = '1';
 const CORPUS = process.env.CORPUS || 'tuneset';
 const tunesetItems = () => (CORPUS === 'flute' ? corpora.fluteItems() : corpora.tunesetItems());
@@ -24,7 +25,7 @@ const merge = (notes) => { const out = []; for (const n of notes) { const l = ou
 
 (async () => {
   const D = await import(pathToFileURL(path.join(__dirname, '../src/decoder.ts')).href);
-  const T = await import(pathToFileURL('C:/Perso/IrishMusicExperiments/Cadence/src/session/recognition/transcription.ts').href);
+  const T = await import(pathToFileURL(`${REPO}/src/session/recognition/transcription.ts`).href);
   const items = tunesetItems();
   const ana = items.map((_, i) => v8.deserialize(fs.readFileSync(path.join(__dirname, '../out', `${process.env.ANA || "ana"}-${CORPUS}-${i}.v8`))));
   const score = (o) => {

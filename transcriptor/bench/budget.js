@@ -1,9 +1,10 @@
 'use strict';
+const { REPO, WS } = require('./paths');
 // The error budget (transcription-bench/diag-errors.js's categories) of our decoder's notes
 // on tuneset, by note length.   node bench/budget.js '{decoder options}'
 const fs = require('node:fs'), v8 = require('node:v8'), path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { tunesetItems } = require('C:/Perso/IrishMusicExperiments/transcription-bench/lib/corpora');
+const { tunesetItems } = require(`${WS}/transcription-bench/lib/corpora`);
 (async () => {
   const D = await import(pathToFileURL(path.join(__dirname, '../src/decoder.ts')).href);
   const o = JSON.parse(process.argv[2] || '{}');

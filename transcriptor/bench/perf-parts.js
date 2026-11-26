@@ -1,8 +1,9 @@
 'use strict';
+const { REPO, WS } = require('./paths');
 // Where the analysis time goes: each window alone, with and without its extras.
 const path = require('node:path'), { pathToFileURL } = require('node:url');
-const C = require('C:/Perso/IrishMusicExperiments/transcription-bench/lib/common');
-const { sessionItems } = require('C:/Perso/IrishMusicExperiments/transcription-bench/lib/corpora');
+const C = require(`${WS}/transcription-bench/lib/common`);
+const { sessionItems } = require(`${WS}/transcription-bench/lib/corpora`);
 (async () => {
   const S = await import(pathToFileURL(path.join(__dirname, '../src/spectrum.ts')).href);
   const it = sessionItems()[0];

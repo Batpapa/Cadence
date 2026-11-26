@@ -1,4 +1,5 @@
 'use strict';
+const { REPO, WS } = require('./paths');
 // Onset judge on tuneset (annotated played notes; repeated notes are merged in the
 // annotation, so a re-attack found counts against us): F-measure of detected onsets
 // against annotated ones, class blind, within 50 and 25 ms; recall at a low threshold (what
@@ -7,7 +8,7 @@
 //   node bench/onsets.js '{"threshold":1,"radius":6,"weight":1,...}'
 const fs = require('node:fs'), v8 = require('node:v8'), path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const BENCH = 'C:/Perso/IrishMusicExperiments/transcription-bench';
+const BENCH = `${WS}/transcription-bench`;
 const C = require(`${BENCH}/lib/common`);
 const { tunesetItems } = require(`${BENCH}/lib/corpora`);
 const o = JSON.parse(process.argv[2] || '{}');
@@ -29,7 +30,7 @@ function match(det, truth, tol) {
   const S = await import(pathToFileURL(path.join(__dirname, '../src/spectrum.ts')).href);
   const L = await import(pathToFileURL(path.join(__dirname, '../src/salience.ts')).href);
   const O = await import(pathToFileURL(path.join(__dirname, '../src/onsets.ts')).href);
-  const T = await import(pathToFileURL('C:/Perso/IrishMusicExperiments/Cadence/src/session/recognition/transcription.ts').href);
+  const T = await import(pathToFileURL(`${REPO}/src/session/recognition/transcription.ts`).href);
   const items = tunesetItems();
   const ffCache = v8.deserialize(fs.readFileSync(`${BENCH}/cache/sweep/tuneset.v8`));
   const acc = {};

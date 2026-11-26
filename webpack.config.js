@@ -149,7 +149,9 @@ class TsPrunePlugin {
   apply(compiler) {
     compiler.hooks.afterEmit.tapAsync('TsPrunePlugin', (compilation, callback) => {
       // vendor/ is generated code (wasm-bindgen output) — not ours to prune.
-      execFile(process.execPath, [require.resolve('ts-prune/lib/index.js'), '--ignore', 'vendor'], { cwd: __dirname }, (_err, stdout) => {
+      // transcriptor/src exports what its Node benches read too, and its `.ts` imports are
+      // beyond ts-prune's TypeScript (4.x): every one would read as unused (.ts-prunerc).
+      execFile(process.execPath, [require.resolve('ts-prune/lib/index.js'), '--ignore', 'vendor|transcriptor.src'], { cwd: __dirname }, (_err, stdout) => {
         const lines = stdout.trim().split('\n').filter(l => l && !l.includes('(used in module)'));
         for (const line of lines) {
           compilation.errors.push(new compilation.compiler.webpack.WebpackError(`[ts-prune] ${line.replace(/\\/g, '/')}`));
@@ -238,6 +240,9 @@ module.exports = (env, argv) => {
     },
     resolve: {
       extensions: ['.tsx', '.ts', '.js'],
+      // transcriptor/src's imports, written `./x.ts` and emitted `./x.js` (tsconfig's
+      // rewriteRelativeImportExtensions): the `.ts` file first
+      extensionAlias: { '.js': ['.ts', '.js'] },
       // Signalsmith Stretch's file, imported as text (`?raw`) and run untouched
       // from a Blob URL (see audioPlayer.ts). Through an alias because the
       // package's `exports` map refuses a query on its entry point.

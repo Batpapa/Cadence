@@ -9,7 +9,7 @@ import { DETECTION_TEMPORAL_CONFIG } from '../../src/session/recognition/detecti
  *    npx vitest run --config vitest.ranking.config.ts experiments/ranking-study/bench.test.ts
  *
  *  Baseline measured 2026-09-13, before any of this work: the decode was 97-98%
- *  of a repeat evaluation, at ~430 ns per (window × state) cell. See NEXT.md. */
+ *  of a repeat evaluation, at ~430 ns per (window × state) cell. See the campaign notes (outside the repo). */
 describe('bench', () => {
   it('decode cost per cell', () => {
     const cfg = DETECTION_TEMPORAL_CONFIG;

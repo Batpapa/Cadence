@@ -1,14 +1,15 @@
 'use strict';
+const { REPO, WS } = require('./paths');
 // clean.mp3 through our decoder and transcription.ts's octaves: the notes against the truth
 // (aligned by edit distance), each difference shown.   node bench/look-clean.js '{opts}' [ANA prefix]
 const fs = require('node:fs'), v8 = require('node:v8'), path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { userItems } = require('C:/Perso/IrishMusicExperiments/transcription-bench/lib/user');
+const { userItems } = require(`${WS}/transcription-bench/lib/user`);
 const N = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const nm = m => N[m % 12] + (Math.floor(m / 12) - 1);
 (async () => {
   const D = await import(pathToFileURL(path.join(__dirname, '../src/decoder.ts')).href);
-  const T = await import(pathToFileURL('C:/Perso/IrishMusicExperiments/Cadence/src/session/recognition/transcription.ts').href);
+  const T = await import(pathToFileURL(`${REPO}/src/session/recognition/transcription.ts`).href);
   const o = JSON.parse(process.argv[2] || '{}');
   const a = v8.deserialize(fs.readFileSync(path.join(__dirname, '../out', `${process.argv[3] || 'hpa'}-user-0.v8`)));
   const notes = D.decode(a, o);
