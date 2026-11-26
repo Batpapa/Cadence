@@ -11,7 +11,7 @@ import type { ContextMenuEntry } from '../../components/contextMenu';
 import { confirmModal, alertModal, showModal, closeModalOf, renderModalBody } from '../../components/modal';
 import { signal, type Signal } from '@preact/signals';
 import {
-  deleteSession, loadSessionAudio, saveSessionMeta, forgetSessionAudio,
+  deleteSession, loadSessionAudio, mutateAnalysis, analysisWithDefaults, forgetSessionAudio,
   uploadSessionAudio, unsyncSessionAudio, fetchSyncedAudio, autoUploadState,
   audioDownloadProgress, audioArrivals, downloadSyncedAudioOnce, keepSyncedAudioHere,
 } from '../db';
@@ -48,7 +48,7 @@ import { devMode } from '../../services/devMode';
 import { appState } from '../../store';
 import { headPosition, withChains, withGaps, chainsOf, shortGapsOf, type ListAnn, type ListChain, type ListGap, type ShortGap } from './timelineModel';
 import { SetMarkButton, setRows, withCutMark, type SetOpens } from './setBreaks';
-import { setDetectionOn } from '../detections';
+import { setDetectionOn, sessionsOf } from '../detections';
 import { useMediaVolume } from '../../components/useMediaVolume';
 import { returningToOffset } from '../../components/scrollRestoration';
 import { generateId } from '../../utils';
@@ -64,11 +64,14 @@ import { repinSetReview, recutSetClip, setReviewId, type Span } from './tunesetS
 // why (reentrant render() during this component's own render pass corrupts
 // Preact's hooks bookkeeping).
 //
-// `session` is a mutable Analysis, edited in place (same object
-// db.ts/saveSessionMeta persists) — merge/delete/bound-adjust/like all mutate
-// it directly and then `bump()` a tick counter to force a re-render, rather
-// than mirroring it into Preact state; matches the original's own
-// renderList()/renderBar() re-invocation after each mutation.
+// `session` is the analysis as the state holds it at this render, read off
+// appState by views/sessions.tsx — never written here. Every edit (merge,
+// delete, bounds, like, notes, name, date, sets) goes through `edit`, which is
+// db.ts's mutateAnalysis: the copy inside mutate() is changed, the state is
+// committed, and this screen is drawn again from it. Until 2026-11-26 the
+// screen edited the state's own object in place and forced its redraws with a
+// tick counter; what an edit leaves to do afterwards (ratings, clips) reads the
+// analysis as it is now through `current`, since `session` is the one before.
 
 const BUCKET_SEGMENT: Record<Detection['bucket'], string> = {
   high: 'rgb(var(--color-success-ch) / 0.75)',
@@ -120,6 +123,10 @@ function DriveFetchBody({ progress, bytes }: { progress: Signal<number>; bytes: 
 /** Where this recording's Drive copy stands. Same readings as the header's own
  *  sync indicator, because it is the same question about a smaller thing. */
 type DriveAudioState = 'off' | 'uploading' | 'on' | 'error' | 'waiting' | 'wifi';
+
+/** A detection whose bounds an edit just moved — as committed — and where
+ *  they were before: what re-pinning its rating and re-cutting its clip need. */
+type Moved = { ann: Detection; previous: { start: number; end: number | null } };
 
 const NOT_ON_DRIVE_TITLE: Record<Exclude<DriveAudioState, 'on'>, string> = {
   off:       'sessions.syncAudio.off',
@@ -242,8 +249,40 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
   // and leave the work to the dblclick handler.
   const lastClickRef = useRef(0);
 
+  // A redraw for what is not in the state — the Focus view's held tune — and
+  // for the children that ask for one. An edit of the analysis needs none: it
+  // commits the state, which this screen reads.
   const [, setTick] = useState(0);
   const bump = () => setTick(x => x + 1);
+
+  /** This render's analysis, for what outlives the render: the player's
+   *  events, wired once at mount, read the detections through it. */
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+  /** The one way this screen writes its analysis (db.ts's mutateAnalysis):
+   *  `fn` edits the copy inside mutate(), never `session`. Resolves once the
+   *  edit is committed. */
+  const edit = (fn: (a: Analysis) => void) => mutateAnalysis(session.id, fn);
+  /** The analysis as it is NOW — after an edit just made, which `session`, the
+   *  one this render was drawn from, does not show yet. */
+  const current = (): Analysis => {
+    const stored = sessionsOf(appState.value)[session.id];
+    return stored ? analysisWithDefaults(stored) : session;
+  };
+  /** An edit of one detection, found by its id in the copy being written. */
+  const editDetection = (id: string, fn: (d: Detection) => void) => {
+    void edit(a => {
+      const d = a.annotations.find(x => x.id === id);
+      if (d) fn(d);
+    });
+  };
+  /** The same for one record of the sets' table. */
+  const editSet = (id: string, fn: (s: NonNullable<Analysis['tunesets']>[number]) => void) => {
+    void edit(a => {
+      const s = a.tunesets?.find(x => x.id === id);
+      if (s) fn(s);
+    });
+  };
 
   // Decks pinned in the deck choice modal. Not persisted — resets each time
   // the summary is opened, on purpose: a destination is a decision about the
@@ -332,41 +371,44 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
    *  the audio forgotten there is no player to ask, and the strip still works
    *  as a map. */
   const applyHead = (tSec: number, follow = true) => {
+    // Through the ref: the player's events call the first render's copy of
+    // this function, and the detections may have been edited since.
+    const s = sessionRef.current;
     headTimeRef.current = tSec;
-    if (headRef.current) headRef.current.style.left = `${Math.min(100, (tSec / (session.duration || 1)) * 100)}%`;
-    const pos = headPosition(session.annotations, tSec, session.duration);
+    if (headRef.current) headRef.current.style.left = `${Math.min(100, (tSec / (s.duration || 1)) * 100)}%`;
+    const pos = headPosition(s.annotations, tSec, s.duration);
     const key = `${pos.ids.join('|')}#${pos.gapFrom ?? ''}`;
     if (key !== litKeyRef.current) { litKeyRef.current = key; setLit({ ...pos, follow }); }
   };
-
-  const persist = () => { void saveSessionMeta(session); };
 
   // ── The sets of this analysis (2026-10-19) ──
   // Which detections make a set is read off the detections on every render
   // (timelineModel's withChains); the table only carries what that cannot
   // give — an identity for the set's heart and its review — and is brought in
-  // line here, written back only when it actually changed.
+  // line after the render that finds it out of line, written back only when
+  // it actually changed (never during the render: that wrote into the state's
+  // own object, until 2026-11-26).
   // Behind an option while it is iterated on with the testers (2026-10-19):
   // off, nothing here runs and the table is never written.
   const setsOn = setDetectionOn(appState.value);
-  const tablePendingRef = useRef(false);
-  const reconciled = setsOn ? tunesetsOf(session, generateId) : session.tunesets ?? [];
-  if (setsOn && !sameTunesets(session.tunesets, reconciled)) {
-    session.tunesets = reconciled;
-    tablePendingRef.current = true;
-  }
-  const records = session.tunesets ?? [];
+  const records = setsOn ? tunesetsOf(session, generateId) : session.tunesets ?? [];
+  const tableStale = setsOn && !sameTunesets(session.tunesets, records);
   useEffect(() => {
-    if (!tablePendingRef.current) return;
-    tablePendingRef.current = false;
-    persist();
-  });
+    if (!tableStale) return;
+    // Worked out again on the copy being written, not taken from this render:
+    // another edit may have landed in between.
+    void edit(a => {
+      const next = tunesetsOf(a, generateId);
+      if (!sameTunesets(a.tunesets, next)) a.tunesets = next;
+    });
+  }, [tableStale, session]);
 
-  /** A set as it stands: its span and its tunes, read from its detections. */
-  const setNow = (detectionIds: string[]): { span: Span; tuneIds: string[] } | null => {
-    const chain = detectionIds.map(id => session.annotations.find(a => a.id === id)).filter((d): d is Detection => !!d);
+  /** A set as it stands in `a`: its span and its tunes, read from its
+   *  detections. */
+  const setNow = (detectionIds: string[], a: Analysis = session): { span: Span; tuneIds: string[] } | null => {
+    const chain = detectionIds.map(id => a.annotations.find(d => d.id === id)).filter((d): d is Detection => !!d);
     if (chain.length === 0) return null;
-    return { span: chainSpan(chain, session.duration), tuneIds: chain.map(d => d.tuneId) };
+    return { span: chainSpan(chain, a.duration), tuneIds: chain.map(d => d.tuneId) };
   };
   // Taken NOW, at render, before any edit below writes into the detections:
   // what an edit has to compare against to know whether a set moved.
@@ -377,26 +419,29 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
    *  looked up again: its card is the one made of the tunes it has NOW. */
   const settleSets = async () => {
     if (!setsOn) return;
-    const after = tunesetsOf(session, generateId);
-    if (!sameTunesets(session.tunesets, after)) { session.tunesets = after; persist(); }
-    const startMs = session.date === null ? NaN : Date.parse(session.date);
+    // The table as written, its ids included: what the ratings are filed under.
+    let after: ReturnType<typeof tunesetsOf> = [];
+    await edit(a => {
+      after = tunesetsOf(a, generateId);
+      if (!sameTunesets(a.tunesets, after)) a.tunesets = after;
+    });
+    const now_ = current();
+    const startMs = now_.date === null ? NaN : Date.parse(now_.date);
     let blob: Blob | undefined | null = null;
-    let changed = false;
     for (const r of after) {
       const was = setsBefore.get(r.id);
-      const now = setNow(r.detectionIds);
+      const now = setNow(r.detectionIds, now_);
       if (!was || !now) continue;
       if (Math.abs(was.span.start - now.span.start) < 0.001 && Math.abs(was.span.end - now.span.end) < 0.001) continue;
       const setCard = setCardFor(now.tuneIds, getContext().user.cards);
       if (!setCard) continue;
       if (!Number.isNaN(startMs)) {
-        changed = await repinSetReview(ctx, setCard.id, setReviewId(session.id, r.id),
-          { startMs, end: was.span.end }, { startMs, end: now.span.end }).catch(() => false) || changed;
+        await repinSetReview(ctx, setCard.id, setReviewId(session.id, r.id),
+          { startMs, end: was.span.end }, { startMs, end: now.span.end }).catch(() => false);
       }
       if (blob === null) blob = await loadSessionAudio(session.id).catch(() => undefined);
-      if (blob) changed = await recutSetClip(ctx, session, setCard.id, was.span, now.span, blob).catch(() => false) || changed;
+      if (blob) await recutSetClip(ctx, now_, setCard.id, was.span, now.span, blob).catch(() => false);
     }
-    if (changed) bump();
   };
 
   // The automatic copy made when the recording was saved, or its retries: shown
@@ -851,15 +896,15 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
    *  A no-op edit is skipped rather than recorded: linking is ON by default, so
    *  every save on a joined detection reports twins, and most of those saves
    *  never moved the join at all. */
-  const applyTwinEdits = (twins: TwinEdit[]): Array<{ ann: Detection; previous: { start: number; end: number | null } }> => {
-    const moved: Array<{ ann: Detection; previous: { start: number; end: number | null } }> = [];
-    for (const edit of twins) {
-      const target = session.annotations.find(a => a.id === edit.id);
+  const applyTwinEdits = (a: Analysis, twins: TwinEdit[]): Moved[] => {
+    const moved: Moved[] = [];
+    for (const twin of twins) {
+      const target = a.annotations.find(d => d.id === twin.id);
       if (!target) continue;
-      const current = edit.edge === 'start' ? target.start : (target.end ?? session.duration);
-      if (Math.abs(current - edit.t) < 0.001) continue;
+      const at = twin.edge === 'start' ? target.start : (target.end ?? a.duration);
+      if (Math.abs(at - twin.t) < 0.001) continue;
       const previous = { start: target.start, end: target.end };
-      if (edit.edge === 'start') target.start = edit.t; else target.end = edit.t;
+      if (twin.edge === 'start') target.start = twin.t; else target.end = twin.t;
       moved.push({ ann: target, previous });
     }
     return moved;
@@ -874,20 +919,19 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
    *  re-cut needs the recording, so it simply does not happen on a device that
    *  no longer holds it — a clip cut from nothing would be worse than a stale
    *  one. */
-  const settleMoved = async (moved: Array<{ ann: Detection; previous: { start: number; end: number | null } }>) => {
+  const settleMoved = async (moved: Moved[]) => {
     await settleSets();
     if (moved.length === 0) return;
-    let changed = false;
+    const now_ = current();
     for (const { ann: target, previous } of moved) {
-      changed = await repinReviewEntry(ctx, session, target, previous).catch(() => false) || changed;
+      await repinReviewEntry(ctx, now_, target, previous).catch(() => false);
     }
     const blob = await loadSessionAudio(session.id).catch(() => undefined);
     if (blob) {
       for (const { ann: target, previous } of moved) {
-        changed = await recutAttachedClip(ctx, session, target, previous, blob).catch(() => false) || changed;
+        await recutAttachedClip(ctx, now_, target, previous, blob).catch(() => false);
       }
     }
-    if (changed) bump();
   };
 
   /** Fills a hole the recogniser left: a tune played here and never
@@ -905,11 +949,11 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
       duration: session.duration,
       getAudio: () => loadSessionAudio(session.id),
       onAdd: (detection, twins) => {
-        session.annotations.splice(insertionIndex(session.annotations, detection.start), 0, detection);
-        const moved = applyTwinEdits(twins);
-        persist();
-        bump();
-        void settleMoved(moved);
+        let moved: Moved[] = [];
+        void edit(a => {
+          a.annotations.splice(insertionIndex(a.annotations, detection.start), 0, detection);
+          moved = applyTwinEdits(a, twins);
+        }).then(() => settleMoved(moved));
       },
     });
   };
@@ -996,45 +1040,14 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
     // The curve is worked out from the recording: only when it is here.
     onTempo: audioUrl ? (a) => showDetectionTempo(a, { audio: () => loadSessionAudio(session.id) }) : undefined,
     getPinnedDeckIds: () => pinnedDeckIdsRef.current,
-    onToggleLike: (id) => {
-      const target = session.annotations.find(a => a.id === id);
-      if (!target) return;
-      target.liked = !target.liked;
-      persist();
-      bump();
-    },
-    onEditNotes: (id, notes) => {
-      const target = session.annotations.find(a => a.id === id);
-      if (!target) return;
-      if (notes.trim()) target.notes = notes; else delete target.notes;
-      persist();
-      bump();
-    },
-    // No engine to delegate to for a finished session — same mutate-in-place
-    // + persist() pattern as onToggleLike above, through the same
-    // alternatePickFields both engines use, so a confirmation means exactly
-    // the same thing here as it does on a live one.
-    onSelectAlternate: (id, pick) => {
-      const target = session.annotations.find(a => a.id === id);
-      if (!target) return;
-      Object.assign(target, alternatePickFields(target, pick));
-      persist();
-      bump();
-    },
-    onAddManualAlternate: (id, tune) => {
-      const target = session.annotations.find(a => a.id === id);
-      if (!target) return;
-      target.manualAlternates = withManualAlternate(target, tune);
-      persist();
-      bump();
-    },
-    onRemoveManualAlternate: (id, tuneId) => {
-      const target = session.annotations.find(a => a.id === id);
-      if (!target) return;
-      Object.assign(target, manualAlternateRemovalFields(target, tuneId));
-      persist();
-      bump();
-    },
+    onToggleLike: (id) => editDetection(id, d => { d.liked = !d.liked; }),
+    onEditNotes: (id, notes) => editDetection(id, d => { if (notes.trim()) d.notes = notes; else delete d.notes; }),
+    // No engine to delegate to for a finished session — an edit of the stored
+    // detection, through the same alternatePickFields both engines use, so a
+    // confirmation means exactly the same thing here as it does on a live one.
+    onSelectAlternate: (id, pick) => editDetection(id, d => { Object.assign(d, alternatePickFields(d, pick)); }),
+    onAddManualAlternate: (id, tune) => editDetection(id, d => { d.manualAlternates = withManualAlternate(d, tune); }),
+    onRemoveManualAlternate: (id, tuneId) => editDetection(id, d => { Object.assign(d, manualAlternateRemovalFields(d, tuneId)); }),
     // Bound adjustment lives in its own screen now (2026-09-20) — the ±5 s
     // steppers that used to sit here are gone from the summary. They asked for
     // a correction of about a second in steps of five, played blind, and wrote
@@ -1056,23 +1069,26 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
         duration: session.duration,
         getAudio: () => loadSessionAudio(session.id),
         pauses: session.pauses,
-        onSave: (edit) => {
-          const previous = { start: ann.start, end: ann.end };
-          ann.start = edit.start;
-          ann.end = edit.end;
-          const stood = Math.abs(previous.start - ann.start) < 0.001
-            && Math.abs((previous.end ?? -1) - (ann.end ?? -1)) < 0.001;
-          // The edited detection travels with the neighbours a join carried
-          // along — a frontier that moved on one side only is exactly the hole
-          // or the overlap the link exists to prevent. All of them settle the
-          // same way afterwards (rating, then clip), so they go in one list.
-          const moved = [
-            ...(stood ? [] : [{ ann, previous }]),
-            ...applyTwinEdits(edit.twins),
-          ];
-          persist();
-          bump();
-          void settleMoved(moved);
+        onSave: (bounds) => {
+          let moved: Moved[] = [];
+          void edit(a => {
+            const d = a.annotations.find(x => x.id === ann.id);
+            if (!d) return;
+            const previous = { start: d.start, end: d.end };
+            d.start = bounds.start;
+            d.end = bounds.end;
+            const stood = Math.abs(previous.start - d.start) < 0.001
+              && Math.abs((previous.end ?? -1) - (d.end ?? -1)) < 0.001;
+            // The edited detection travels with the neighbours a join carried
+            // along — a frontier that moved on one side only is exactly the
+            // hole or the overlap the link exists to prevent. All of them
+            // settle the same way afterwards (rating, then clip), so they go
+            // in one list.
+            moved = [
+              ...(stood ? [] : [{ ann: d, previous }]),
+              ...applyTwinEdits(a, bounds.twins),
+            ];
+          }).then(() => settleMoved(moved));
         },
       });
     },
@@ -1104,16 +1120,14 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
         // playing stands.
         if (audioRef.current && !audioRef.current.paused && headIn(ann.start, ann.end ?? session.duration)) audioRef.current.pause();
         if (drivePlayer.playingId === ann.id) drivePlayer.stop();
-        session.annotations.splice(i, 1);
-        persist();
-        bump();
         // The rating goes with it (user's rule, 2026-09-23): it said this tune
         // was played here, and deleting the detection says it was not. Nothing
         // like deleting the whole analysis, where the playing stands.
         // Then the set it was in, whose span may just have shrunk — one write
         // after the other, never side by side.
         void (async () => {
-          if (await dropReviewEntry(ctx, session, ann)) bump();
+          await edit(a => { a.annotations = a.annotations.filter(x => x.id !== ann.id); });
+          await dropReviewEntry(ctx, current(), ann);
           await settleSets();
         })();
       },
@@ -1135,26 +1149,32 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
             // same way. On top of that the detection merged AWAY may carry a
             // rating of its own, which the survivor inherits (or, if it was
             // rated too, which goes: one tune, one playing, one review).
-            const previous = { start: prev.start, end: prev.end };
-            const absorbedEnd = ann.end;
-            prev.end = ann.end;
-            prev.evidence = [...prev.evidence, ...ann.evidence];
-            prev.confidence = Math.max(prev.confidence, ann.confidence);
-            // The recogniser's own thresholds: a copy written here on 2026-07-16
-            // (0.7/0.5) never followed them when they moved.
-            prev.bucket = bucketOf(prev.confidence, DETECTION_TEMPORAL_CONFIG);
-            // The note of the one merged away is the user's writing: kept,
-            // under the survivor's, rather than lost with the detection.
-            if (ann.notes) prev.notes = prev.notes ? `${prev.notes}\n\n${ann.notes}` : ann.notes;
-            session.annotations.splice(i, 1);
-            persist();
-            bump();
             // One after the other, never side by side: each writes the shared
             // state through its own mutate, and two of those in flight at once
             // would each be working from the state as it was before the other.
             void (async () => {
-              await settleMoved([{ ann: prev, previous }]);
-              if (await absorbReviewEntry(ctx, session, ann, absorbedEnd, prev)) bump();
+              // Set inside the edit, which TypeScript cannot follow.
+              let merged = null as Moved | null;
+              await edit(a => {
+                const survivor = a.annotations.find(x => x.id === prev.id);
+                const gone = a.annotations.find(x => x.id === ann.id);
+                if (!survivor || !gone) return;
+                const previous = { start: survivor.start, end: survivor.end };
+                survivor.end = gone.end;
+                survivor.evidence = [...survivor.evidence, ...gone.evidence];
+                survivor.confidence = Math.max(survivor.confidence, gone.confidence);
+                // The recogniser's own thresholds: a copy written here on
+                // 2026-07-16 (0.7/0.5) never followed them when they moved.
+                survivor.bucket = bucketOf(survivor.confidence, DETECTION_TEMPORAL_CONFIG);
+                // The note of the one merged away is the user's writing: kept,
+                // under the survivor's, rather than lost with the detection.
+                if (gone.notes) survivor.notes = survivor.notes ? `${survivor.notes}\n\n${gone.notes}` : gone.notes;
+                a.annotations = a.annotations.filter(x => x.id !== gone.id);
+                merged = { ann: survivor, previous };
+              });
+              if (!merged) return;
+              await settleMoved([merged]);
+              await absorbReviewEntry(ctx, current(), ann, ann.end, merged.ann);
             })();
           }}
         >
@@ -1215,12 +1235,11 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
   /** A cut, a link, or the rule again — see model.ts's opensSet. The sets on
    *  either side move with it, and drag their rating and clip (settleSets). */
   const setOpens: SetOpens = (id, opens) => {
-    const target = session.annotations.find(a => a.id === id);
-    if (!target) return;
-    if (opens === undefined) delete target.opensSet; else target.opensSet = opens;
-    persist();
-    bump();
-    void settleSets();
+    void edit(a => {
+      const target = a.annotations.find(x => x.id === id);
+      if (!target) return;
+      if (opens === undefined) delete target.opensSet; else target.opensSet = opens;
+    }).then(settleSets);
   };
 
   /** The lit unjoin mark above a tune or a set — in the editor view only. */
@@ -1319,20 +1338,8 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
       getPinnedDeckIds: () => pinnedDeckIdsRef.current,
       onChanged: bump,
       sessionStartMs: session.date === null ? undefined : Date.parse(session.date),
-      onToggleLike: (r) => {
-        const target = session.tunesets?.find(x => x.id === r.id);
-        if (!target) return;
-        if (target.liked) delete target.liked; else target.liked = true;
-        persist();
-        bump();
-      },
-      onEditNotes: (r, notes) => {
-        const target = session.tunesets?.find(x => x.id === r.id);
-        if (!target) return;
-        if (notes.trim()) target.notes = notes; else delete target.notes;
-        persist();
-        bump();
-      },
+      onToggleLike: (r) => editSet(r.id, s => { if (s.liked) delete s.liked; else s.liked = true; }),
+      onEditNotes: (r, notes) => editSet(r.id, s => { if (notes.trim()) s.notes = notes; else delete s.notes; }),
       clip: { audioAvailable: !!audioUrl, getAudio: () => loadSessionAudio(session.id) },
     };
   };
@@ -1515,7 +1522,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
       <TitleRow
         getName={() => session.name}
         getDefaultName={() => session.name}
-        onRename={(val) => { session.name = val; persist(); }}
+        onRename={(val) => { void edit(a => { a.name = val; }); }}
         // deleteSession resolves only once the recording is cleared, Drive
         // included — long enough to have gone elsewhere meanwhile. Turning
         // round from THAT page would be a step nobody asked for; the entry
@@ -1527,9 +1534,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
         menu={titleMenu}
         hasNotes={!!session.notes?.trim()}
         onNotes={() => showAnalysisNotesModal(session.notes ?? '', (notes) => {
-          if (notes.trim()) session.notes = notes; else delete session.notes;
-          persist();
-          bump();
+          void edit(a => { if (notes.trim()) a.notes = notes; else delete a.notes; });
         })}
       />
       <AnalysisFolderPicker ctx={ctx} sessionId={session.id} />
@@ -1537,27 +1542,25 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
         getDate={() => session.date}
         setDate={(date) => {
           const previousDate = session.date;
-          session.date = date;
-          persist();
           // Every rating of this session is filed at "this date plus where the
           // tune ended", so moving the date moves all of them — and the picker
           // only offers minutes, which means re-choosing what looks like the
           // same date still lands seconds away from it.
           void (async () => {
-            if (await repinSessionDate(ctx, session, session.annotations, previousDate)) bump();
+            await edit(a => { a.date = date; });
+            const now_ = current();
+            await repinSessionDate(ctx, now_, now_.annotations, previousDate);
             // The sets' ratings are filed the same way, so they move too.
             if (date === null || previousDate === null) return;
             const from = Date.parse(previousDate), to = Date.parse(date);
             if (Number.isNaN(from) || Number.isNaN(to)) return;
-            let moved = false;
-            for (const r of session.tunesets ?? []) {
-              const now = setNow(r.detectionIds);
+            for (const r of now_.tunesets ?? []) {
+              const now = setNow(r.detectionIds, now_);
               const setCard = now ? setCardFor(now.tuneIds, getContext().user.cards) : undefined;
               if (!now || !setCard) continue;
-              moved = await repinSetReview(ctx, setCard.id, setReviewId(session.id, r.id),
-                { startMs: from, end: now.span.end }, { startMs: to, end: now.span.end }) || moved;
+              await repinSetReview(ctx, setCard.id, setReviewId(session.id, r.id),
+                { startMs: from, end: now.span.end }, { startMs: to, end: now.span.end });
             }
-            if (moved) bump();
           })();
         }}
         onChange={bump}

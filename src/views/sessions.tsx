@@ -1,9 +1,8 @@
-import { useEffect, useState } from 'preact/hooks';
-import { getContext } from '../store';
+import { appState, getContext } from '../store';
 import { t } from '../services/i18nService';
 import type { AppContext, Route } from '../types';
-import { loadSessionMeta } from '../session/db';
-import type { Analysis } from '../session/model';
+import { analysisWithDefaults } from '../session/db';
+import { sessionsOf } from '../session/detections';
 import { activeLive, activeImport } from '../session/ui/sessionStore';
 import { SessionLibrary } from '../session/ui/SessionLibrary';
 import { DetectionsLibrary } from '../session/ui/DetectionsLibrary';
@@ -29,34 +28,30 @@ import { IconButton } from '../components/ui';
 
 
 function SessionByIdScreen({ ctx, sessionId, annotationId }: { ctx: AppContext; sessionId: string; annotationId?: string }) {
-  // `missing` once the lookup came back empty, as distinct from still loading.
-  const [session, setSession] = useState<Analysis | 'missing' | null>(null);
+  // Read off the state at every render (2026-11-26), so an edit — the
+  // summary's own (mutateAnalysis), or one arriving from Drive — is on screen
+  // as soon as it is committed. Until then the analysis was loaded once and
+  // the summary edited that very object, the state's own, in place. Every way
+  // here (a recording stopped, an import, a recovery) commits the finished
+  // analysis before navigating, and an analysis still being recorded is never
+  // shown here.
+  const stored = sessionsOf(appState.value)[sessionId];
 
-  // Keyed on sessionId alone (not e.g. a generation counter) is deliberate:
-  // re-analyzing an existing session can navigate here again with the SAME
-  // id once it's done — see finishImportRun's own doc on why that always
-  // goes through a real navigate() via a different intermediate route
-  // rather than landing on this exact id twice in a row.
-  useEffect(() => {
-    let cancelled = false;
-    setSession(null);
-    void loadSessionMeta(sessionId).then(s => {
-      if (!cancelled) setSession(s ?? 'missing');
-    });
-    return () => { cancelled = true; };
-    // eslint-disable-next-line
-  }, [sessionId]);
-
-  if (!session) return null;
   // Said on the spot, as a deleted card is — never a redirect. Back lands
   // here after a deletion, and a navigate() from this point pushed a fresh
   // library entry on top of it: each back landed on the deleted analysis,
   // which pushed the library again, and nothing before it could be reached
   // any more (reported 2026-10-15).
-  if (session === 'missing') return <p class="text-sm text-dim">{t('sessions.notFound')}</p>;
+  if (!stored) return <p class="text-sm text-dim">{t('sessions.notFound')}</p>;
+  const session = analysisWithDefaults(stored);
 
+  // Keyed on the id: the summary keeps a whole visit in its own state (the
+  // recording loaded, the head), which belongs to one analysis. Re-analyzing
+  // lands on the SAME id again — through a different route in between (see
+  // finishImportRun), which remounts it all the same.
   return (
     <SessionSummary
+      key={sessionId}
       session={session}
       ctx={ctx}
       annotationId={annotationId}

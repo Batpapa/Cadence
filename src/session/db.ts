@@ -233,6 +233,14 @@ function migrateSession(s: Analysis | undefined): Analysis | undefined {
   return s;
 }
 
+/** `s` with migrateSession's defaults, for a reader of the state — which must
+ *  not write into it outside mutate(): `s` itself when it has them, a copy that
+ *  does otherwise. They are stored by the next edit (mutateAnalysis). */
+export function analysisWithDefaults(s: Analysis): Analysis {
+  if (s.source !== undefined && s.name) return s;
+  return migrateSession({ ...s })!;
+}
+
 /** One-time migration onto the current (2026-08-26) storage shape, run once
  *  per user on this device. Two earlier shapes are recognized and merged in:
  *   1. The very first version of this feature: ALL users' sessions mixed
@@ -503,9 +511,24 @@ export async function saveSessionMeta(session: Analysis): Promise<void> {
   await (await localDb()).delete(DRAFT_STORE, session.id); // superseded by the finalized copy above
 }
 
+/** Edits one finished analysis where it is stored — the copy inside mutate(),
+ *  never an object a screen holds — with migrateSession's defaults written on
+ *  the way. Nothing happens to an analysis that is no longer there (deleted
+ *  meanwhile, on this device or another): an edit never brings one back. */
+export async function mutateAnalysis(sessionId: string, fn: (a: Analysis) => void): Promise<void> {
+  const { mutate } = await storeModule();
+  await mutate(user => editAnalyserModule(user, mod => {
+    const a = mod.sessions[sessionId];
+    if (!a) return;
+    migrateSession(a);
+    fn(a);
+  }));
+}
+
 export async function loadSessionMeta(sessionId: string): Promise<Analysis | undefined> {
   const finalized = (await moduleData()).sessions[sessionId];
-  if (finalized) return migrateSession(finalized);
+  // A copy where defaults are filled: the stored one is the state's own.
+  if (finalized) return analysisWithDefaults(finalized);
   return migrateSession(await (await localDb()).get(DRAFT_STORE, sessionId));
 }
 
