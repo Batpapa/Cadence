@@ -1,6 +1,6 @@
 import './styles.css';
 import 'abcjs/abcjs-audio.css';
-import { initDb, dumpRawDatabase, loadUser, saveUser, getAllUserIds, loadLegacyState, deleteLegacyState, loadAllUsers, getLastUserId, setLastUserId, touchUserOrder } from './db';
+import { initDb, dumpRawDatabase, loadUser, saveUser, getAllUserIds, loadAllUsers, getLastUserId, setLastUserId, touchUserOrder } from './db';
 import { emptyState, formatBytes, downloadCadenceFile, downloadBlob, isTouchPrimaryDevice, isAppleTouchDevice } from './utils';
 import { appState, commitState, applyFromDrive, routeSignal, loadSavedRoute, initRoutePersistence } from './store';
 import { ensureCurrentUser, ensureCurrentProfile, welcomeLanguage } from './services/userService';
@@ -24,7 +24,7 @@ import { initAttachmentDbForUser, rawAttachmentBlobs } from './services/attachme
 import { initAttachmentSync } from './services/attachmentStore';
 import { buildZip, audioExtension } from './services/zip';
 import { applyDriveState, showDriveConflictModal } from './components/driveConflictModal';
-import { migrateState, migrateLegacyToUser, applyExternalData } from './services/migration';
+import { migrateState, applyExternalData } from './services/migration';
 import { applyZoom } from './services/zoomService';
 import { applyTheme } from './services/themeService';
 import { mountApp, mountUserSelector, type DriveRecovery } from './appRoot';
@@ -290,24 +290,9 @@ export async function openUser(id: string, root: HTMLElement): Promise<void> {
   try {
     await initDb();
 
-    // ── Migration: old single-blob AppState → new User store ──────────────────
-    // LEGACY until 2026-12-01 — the single-blob IndexedDB store, not written since 2026-06-01 (d8d6257): this branch, db.ts's loadLegacyState/deleteLegacyState (db.ts's upgrade that drops the store stays).
-    const legacy = await loadLegacyState();
-    if (legacy && (legacy['currentUserId'] as string)) {
-      migrateState(legacy as unknown as User);
-      const user = migrateLegacyToUser(legacy);
-      ensureCurrentUser(user);
-      ensureCurrentProfile(user);
-      commitState(user);
-      await saveUser(user);
-      await deleteLegacyState();
-      setLastUserId(user.id);
-      setLanguage(user.language);
-      await openUserStores(user.id);
-      initRoutePersistence(user.id);
-      finishBoot(root);
-      return;
-    }
+    // The single-blob store of before 2026-06-01 is no longer moved into the
+    // per-user one: that migration went on 2026-11-26 (the six-month rule for
+    // old formats, legacyDeadlines.test.ts).
 
     // ── Normal boot ───────────────────────────────────────────────────────────
     const lastId  = getLastUserId();

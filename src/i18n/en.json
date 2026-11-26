@@ -670,6 +670,7 @@
   "settings.export.failed.title": "Export failed",
   "settings.export.tooBig": "This backup would be {size}, past the {max} a backup file can hold. Free some room by removing the audio of older analyses, or export the data only.",
   "settings.import.failed.title": "Import failed",
+  "migration.multiUser": "These data come from a version of Cadence too old to be read any more (before June 2026). Nothing was changed.",
   "migration.tooOld": "These data come from a version of Cadence too old to be read any more (format {from}; the oldest still read is {oldest}). Nothing was changed.",
   "settings.import.messageFull": "This will replace all current data, recordings included, with the contents of the backup. Confirm?",
   "settings.username": "Username",

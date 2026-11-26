@@ -146,62 +146,20 @@ export function migrateState(user: AppState): void {
 
 /**
  * Applies external data (Drive or file import) onto the current user.
- * Handles both old AppState format and new User format.
  * Always preserves the current user's id.
  */
 export function applyExternalData(raw: Record<string, unknown>, currentId: string): User {
-  let user: User;
-  if ('users' in raw && 'currentUserId' in raw) {
-    // Old multi-user AppState format.
-    // LEGACY until 2026-12-01 — the multi-user AppState, not written since 2026-06-01 (d8d6257): this branch, with migrateLegacyToUser.
-    migrateState(raw as unknown as AppState);
-    user = migrateLegacyToUser(raw);
-  } else {
-    // New User format
-    migrateState(raw as unknown as AppState);
-    user = raw as unknown as User;
-  }
+  // The multi-user AppState of before 2026-06-01 ({users, currentUserId}) is no
+  // longer converted (gone 2026-11-26, the six-month rule). Refused like any
+  // state too old: it stopped at v4, above the floor until that moves to 5 —
+  // read as a single user it would come out half right, its settings lost.
+  // LEGACY until 2026-12-12 — this check and the migration.multiUser key, once OLDEST_SCHEMA is 5 and refuses those blobs by their version.
+  if ('users' in raw && 'currentUserId' in raw) throw new Error(t('migration.multiUser'));
+  migrateState(raw as unknown as AppState);
+  const user = raw as unknown as User;
   const result = { ...user, id: currentId };
   ensureCurrentUser(result);
   ensureCurrentProfile(result);
   return result;
 }
 
-/**
- * Converts the old AppState format (multi-user blob) to the new User format.
- * Run migrateState on the raw old state before calling this.
- *
- * LEGACY until 2026-12-01 — the multi-user AppState ({users, currentUserId}), not written since 2026-06-01 (d8d6257): this, applyExternalData's 'users' branch, fullBackup.ts's isOldFormat.
- */
-export function migrateLegacyToUser(raw: Record<string, unknown>): User {
-  const currentUserId = raw['currentUserId'] as string ?? '';
-  const oldUsers = raw['users'] as Record<string, Record<string, unknown>> ?? {};
-  const oldUser  = oldUsers[currentUserId] ?? {};
-
-  // Strip legacy userId field from folders
-  const rawFolders = (raw['folders'] as Record<string, Record<string, unknown>>) ?? {};
-  const folders: User['folders'] = {};
-  for (const [fid, f] of Object.entries(rawFolders)) {
-    const { userId: _userId, ...rest } = f as Record<string, unknown> & { userId?: unknown };
-    folders[fid] = rest as unknown as User['folders'][string];
-  }
-
-  return {
-    id:                   currentUserId,
-    name:                 'Default',
-    language:             (oldUser['language'] as User['language']) ?? 'en',
-    availabilityThreshold:(oldUser['availabilityThreshold'] as number) ?? 0.9,
-    weightByImportance:   (oldUser['weightByImportance'] as boolean) ?? true,
-    forgettingRate:       (oldUser['forgettingRate'] as number) ?? 1,
-    profileIds:           (oldUser['profileIds'] as string[]) ?? [],
-    currentProfileId:     raw['currentProfileId'] as string ?? '',
-    profiles:             (raw['profiles'] as User['profiles']) ?? {},
-    cards:                (raw['cards']   as User['cards'])    ?? {},
-    decks:                (raw['decks']   as User['decks'])    ?? {},
-    cardWorks:            (raw['cardWorks'] as User['cardWorks']) ?? {},
-    folders,
-    rootFolderIds:        (raw['rootFolderIds'] as string[]) ?? [],
-    rootDeckIds:          (raw['rootDeckIds']   as string[]) ?? [],
-    schemaVersion:        raw['schemaVersion'] as number | undefined,
-  };
-}

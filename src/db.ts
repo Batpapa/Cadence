@@ -5,8 +5,9 @@ import { withTimeout } from './utils';
 const DB_NAME    = 'cadence';
 const DB_VERSION = 3;
 const USER_STORE   = 'user';
+/** The single-blob store of before 2026-06-01. Its migration went on
+ *  2026-11-26; the upgrade below still drops the store where it lingers. */
 const LEGACY_STORE = 'state';
-const LEGACY_KEY   = 'cadence-state';
 const LS_LAST_USER  = 'cadence_last_user_id';
 const LS_USER_ORDER = 'cadence_user_order';
 
@@ -92,23 +93,6 @@ export async function saveUser(user: User): Promise<void> {
 
 export async function getAllUserIds(): Promise<string[]> {
   return _db.getAllKeys(USER_STORE) as Promise<string[]>;
-}
-
-/** Read from the legacy single-key store for one-time migration.
- *  LEGACY until 2026-12-01 — the single-blob IndexedDB store, not written since 2026-06-01 (d8d6257): this and deleteLegacyState, with main.ts's boot branch. */
-export async function loadLegacyState(): Promise<Record<string, unknown> | undefined> {
-  try {
-    return await _db.get(LEGACY_STORE, LEGACY_KEY);
-  } catch {
-    return undefined;
-  }
-}
-
-/** Clear the legacy data entry after migration (store is dropped on next upgrade). */
-export async function deleteLegacyState(): Promise<void> {
-  try {
-    await _db.delete(LEGACY_STORE, LEGACY_KEY);
-  } catch { /* ignore */ }
 }
 
 export async function deleteUser(id: string): Promise<void> {

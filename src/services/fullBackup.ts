@@ -194,12 +194,10 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 
 function isValidBackup(data: unknown): data is Record<string, unknown> {
   if (!isRecord(data)) return false;
-  // Old format: has users map + cards.
-  // LEGACY until 2026-12-01 — the multi-user AppState in a JSON .cdb, not written since 2026-06-01 (d8d6257): isOldFormat.
-  const isOldFormat = isRecord(data['users']) && isRecord(data['cards']);
-  // New format: has cards + profiles directly (id may be absent — stripped on export)
-  const isNewFormat = isRecord(data['cards']) && isRecord(data['profiles']);
-  return isOldFormat || isNewFormat;
+  // Cards and profiles directly (id may be absent — stripped on export). The
+  // multi-user AppState of before 2026-06-01 is no longer accepted (gone
+  // 2026-11-26, the six-month rule): such a file is "not a backup" now.
+  return isRecord(data['cards']) && isRecord(data['profiles']);
 }
 
 /** LEGACY READ — a .cdb as it was written until 2026-11-15. */
