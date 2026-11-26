@@ -9,9 +9,8 @@ import { IncrementalViterbiSegmenter } from './viterbiSegmenter';
 import { PlayedPitch } from './playedPitch';
 import { initTranscriptor } from './transcriptorInit';
 import { configureForQuery, TuneQuery } from './folkfriendQuery';
-import { FolkFriendEngine } from './folkfriendEngine';
 import { TranscriptorEngine } from './transcriptorEngine';
-import type { RecognitionEngineId, WindowEngine } from './windowEngine';
+import type { WindowEngine } from './windowEngine';
 import type { WindowResult, DetectionEvent } from '../model';
 import { TempoTracker, type TempoReading } from '../liveTempo';
 import { FEATURE_PITCHES } from '../scoreFollow';
@@ -21,13 +20,12 @@ import { ANALYSIS_HOP_S, ANALYSIS_WINDOW_S, FF_PCM_WINDOW, DEBUG_LIVE_AUDIO } fr
 // Owns the WASM instance and the tune index, the PCM ring buffer and the
 // incremental Viterbi detector (viterbiSegmenter.ts). PCM chunks arrive (from
 // the audio worklet's MessagePort or the main thread); every ANALYSIS_HOP_S of
-// new signal, the last ANALYSIS_WINDOW_S are heard by the ENGINE chosen at init
-// (windowEngine.ts): transcriptor/'s note decoder by default since 2026-11-26
-// (transcriptorEngine.ts), or FolkFriend's own decoder, kept to compare with
-// (folkfriendEngine.ts, services/recognitionEngine.ts). Both query the index
-// the same way (folkfriendQuery.ts).
+// new signal, the last ANALYSIS_WINDOW_S are heard by the engine (windowEngine.ts):
+// transcriptor/'s note decoder since 2026-11-26 (transcriptorEngine.ts), which
+// queries FolkFriend's index (folkfriendQuery.ts). FolkFriend's own decoder,
+// which heard the windows until then, is compared with in the benches only.
 //
-// ── The index and FolkFriend's decoder: pitch classes, whatever the key (2026-11-07) ──
+// ── The index, and FolkFriend's decoder until 2026-11-26: pitch classes, whatever the key (2026-11-07) ──
 // The recognition instance transcribes and compares PITCH CLASSES, octave
 // forgotten (folkfriend-src feature/pitch_class.rs): each window's spectra lose
 // their percussive part (harmonic/percussive separation) and their constant
@@ -61,8 +59,7 @@ export type FFWorkerRequest =
    *  message follows, to be merged before the index loads; `theSession` —
    *  TheSession's index, loaded (downloaded the first time) only when on;
    *  `sourceOrder` — the indexes' sources in the order that wins ties. */
-  /** `engine`: what hears the windows (windowEngine.ts), the transcriptor's by default. */
-  | { type: 'init'; sampleRate: number; hopS?: number; tempo?: boolean; engine?: RecognitionEngineId; cards: boolean; theSession: boolean; sourceOrder: string[] }
+  | { type: 'init'; sampleRate: number; hopS?: number; tempo?: boolean; cards: boolean; theSession: boolean; sourceOrder: string[] }
   /** The user's tune cards (cardIndex.ts), once the page has gathered them. */
   | { type: 'cards'; tunes: CardIndexTune[] }
   | { type: 'worklet-port'; port: MessagePort }
@@ -264,15 +261,11 @@ async function mergeCardIndex(indexData: { settings: Record<string, unknown>; al
   }
 }
 
-async function handleInit(sr: number, hop: number | undefined, tempo: boolean | undefined, engineId: RecognitionEngineId, theSession: boolean, sourceOrder: string[]): Promise<void> {
+async function handleInit(sr: number, hop: number | undefined, tempo: boolean | undefined, theSession: boolean, sourceOrder: string[]): Promise<void> {
   sampleRate = sr;
   hopS = hop ?? ANALYSIS_HOP_S;
-  if (engineId === 'transcriptor') {
-    const native = await initTranscriptor();
-    console.info(`[recognition] décodeur : transcriptor (${native ? 'WebAssembly' : 'TypeScript'})`);
-  } else {
-    console.info('[recognition] décodeur : FolkFriend (comparaison)');
-  }
+  // the decoder's analysis in WebAssembly where it loads (else in TypeScript)
+  await initTranscriptor();
   // The SIMD build where the browser has it (folkfriendInit.ts).
   const usingSimd = await initFolkFriend();
   // Which build loaded is otherwise invisible: the bundler hashes both
@@ -281,8 +274,6 @@ async function handleInit(sr: number, hop: number | undefined, tempo: boolean | 
   // about speed.
   console.info(`[folkfriend] moteur ${usingSimd ? 'SIMD (rapide)' : 'scalaire (repli — navigateur sans SIMD)'}`);
   ff = new FolkFriendWASM();
-  // the rate FolkFriend's own decoder hears at (the comparison engine)
-  ff.set_sample_rate(sampleRate);
   // Before the index is loaded: it is then folded as it arrives (see the top
   // of this file). Only this instance — tempoFf below must keep serving
   // 48-note take_features.
@@ -325,7 +316,7 @@ async function handleInit(sr: number, hop: number | undefined, tempo: boolean | 
     return Array.isArray(raw) ? raw.map(([id, s]) => [id, s.contour] as [string, string]) : [];
   });
   const query = new TuneQuery(loaded, playedPitch);
-  engine = engineId === 'folkfriend' ? new FolkFriendEngine(loaded, query) : new TranscriptorEngine(sampleRate, query);
+  engine = new TranscriptorEngine(sampleRate, query);
 
   ring = new Float32Array(Math.ceil((ANALYSIS_WINDOW_S + hopS) * sampleRate));
   ringWrite = 0;
@@ -476,7 +467,7 @@ function onRequest(e: MessageEvent<FFWorkerRequest>): void {
     switch (msg.type) {
       case 'init':
         if (!msg.cards) receiveCards([]);
-        void handleInit(msg.sampleRate, msg.hopS, msg.tempo, msg.engine ?? 'transcriptor', msg.theSession, msg.sourceOrder).catch(err => post({ type: 'error', message: String(err) }));
+        void handleInit(msg.sampleRate, msg.hopS, msg.tempo, msg.theSession, msg.sourceOrder).catch(err => post({ type: 'error', message: String(err) }));
         break;
       case 'cards':
         receiveCards(msg.tunes);

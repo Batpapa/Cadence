@@ -4,7 +4,7 @@ Cadence's note decoder: it listens to a recording and writes down the notes that
 It powers two features:
 - the hidden **transcription** (audio to ABC);
 - the **recognition** of tunes in recordings, live or imported. FolkFriend's own decoder, which did
-  this job before, stays behind a hidden switch so the two can be compared.
+  this job before, is no longer in the app: the two are compared in the benches.
 
 Nothing in it is specific to one musical style.
 
@@ -60,7 +60,7 @@ in `webpack.config.js`). `ts-prune` cannot follow these imports, so it skips thi
 
 In Cadence:
 - `src/session/recognition/transcriptorEngine.ts` is the recognition engine built on this
-  decoder (`windowEngine.ts` describes both engines);
+  decoder (`windowEngine.ts`: the engine's contract);
 - `src/session/recognition/folkfriendView.ts` runs FolkFriend for the extra view;
 - `src/session/recognition/scoreFollowWorker.ts` writes the hidden transcription.
 

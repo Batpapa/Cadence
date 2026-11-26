@@ -5,8 +5,6 @@ import type { TempoReading } from './liveTempo';
 import type { RecognitionSink } from './audio/sources';
 import { DEBUG_LIVE_AUDIO } from './sessionConfig';
 import type { CardIndexTune } from './recognition/cardIndex';
-import type { RecognitionEngineId } from './recognition/windowEngine';
-import { recognitionEngine } from '../services/recognitionEngine';
 
 // ── Main-thread wrapper around the FolkFriend recognition worker ──────────────
 // Implements RecognitionSink: PCM sources (mic worklet, decoded file) feed it
@@ -58,10 +56,6 @@ export interface RecognitionOptions {
   /** Follow the tempo of the audio too (liveTempo.ts): a reading a second of
    *  signal, through `onTempo`. */
   tempo?: boolean;
-  /** What hears the windows (recognition/windowEngine.ts); by default this
-   *  device's choice (services/recognitionEngine.ts: the transcriptor's decoder,
-   *  or FolkFriend's behind the hidden switch). */
-  engine?: RecognitionEngineId;
 }
 
 export class RecognitionClient implements RecognitionSink {
@@ -133,7 +127,7 @@ export class RecognitionClient implements RecognitionSink {
     // loads the index. A failure to gather sends none rather than stalling.
     const sources = recognitionSources?.() ?? null;
     this.send({
-      type: 'init', sampleRate, hopS: options.hopS, tempo: options.tempo, engine: options.engine ?? recognitionEngine(),
+      type: 'init', sampleRate, hopS: options.hopS, tempo: options.tempo,
       cards: sources?.cards ?? false, theSession: sources?.theSession ?? true, sourceOrder: sources?.sourceOrder ?? [],
     });
     if (sources?.cards) {

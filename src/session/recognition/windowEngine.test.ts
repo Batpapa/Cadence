@@ -3,15 +3,13 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import init, { FolkFriendWASM } from '../../../vendor/folkfriend/folkfriend.js';
 import { configureForQuery, TuneQuery } from './folkfriendQuery';
-import { FolkFriendEngine } from './folkfriendEngine';
 import { TranscriptorEngine } from './transcriptorEngine';
 import { PlayedPitch } from './playedPitch';
-import type { WindowEngine } from './windowEngine';
 
-// Both recognition engines end to end, in Node, as the worker drives them: FolkFriend's module,
-// an index of the sample settings (test-fixtures/abc-contour-index-sample.json), a window of
-// one of them played by harmonic tones — the tune must come first. Guards the comparison
-// engine as much as the default one: neither runs anywhere else in the tests.
+// The recognition engine end to end, in Node, as the worker drives it: FolkFriend's module and
+// query, an index of the sample settings (test-fixtures/abc-contour-index-sample.json), a window
+// of one of them played by harmonic tones — the tune must come first. The worker itself runs in
+// no test: this is what checks the whole chain.
 
 const RATE = 48000;
 const CONTOUR_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV';
@@ -41,12 +39,10 @@ function play(contour: string, q = 0.13, seconds = 10): Float32Array {
 }
 
 let query: TuneQuery;
-let ff: FolkFriendWASM;
 
 beforeAll(async () => {
   await init(readFileSync(resolve(__dirname, '../../../vendor/folkfriend/folkfriend_bg_simd.wasm')));
-  ff = new FolkFriendWASM();
-  ff.set_sample_rate(RATE);
+  const ff = new FolkFriendWASM();
   configureForQuery(ff);
   const settings: Record<string, unknown> = {}, aliases: Record<string, string[]> = {};
   for (const [id, s] of Object.entries(sample)) {
@@ -63,10 +59,8 @@ beforeAll(async () => {
 
 const TUNES = ['1', '39'];
 
-describe.each([
-  ['transcriptor', () => new TranscriptorEngine(RATE, query) as WindowEngine],
-  ['folkfriend', () => new FolkFriendEngine(ff, query) as WindowEngine],
-])('the %s engine', (_name, make) => {
+describe('the engine', () => {
+  const make = () => new TranscriptorEngine(RATE, query);
   it.each(TUNES)('names tune %s first in a window of it', id => {
     const engine = make();
     const { result } = engine.analyze(play(sample[id]!.contour), 0, 10);
