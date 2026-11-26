@@ -4,10 +4,9 @@ import { followScore, contourToMidi, FEATURE_PITCHES, type FollowResult } from '
 import { openAudioInput } from '../audio/clipExtract';
 import { getSettingContour } from './indexStore';
 import { FF_PCM_WINDOW } from '../sessionConfig';
-import { Novelty, estimateRate } from '../liveTempo';
-import { transcribe, quaverContour, keyOfAbc, makeKey, writeAbc } from './transcription';
-import { hear, gridNovelty, asClassNotes, resample, RATE } from '../../../transcriptor/src/decoder.ts';
-import { FolkFriendView } from './folkfriendView';
+import { Novelty } from '../liveTempo';
+import { resample, RATE } from '../../../transcriptor/src/decoder.ts';
+import { transcribeAudio } from './transcribeAudio';
 import { initTranscriptor } from './transcriptorInit';
 
 // ── Score following worker ───────────────────────────────────────────────────
@@ -347,62 +346,14 @@ function locate(features: Float32Array, fps: number, score: number[], onRatio: (
 }
 
 // ── A recording written out (2026-11-23, the user: a hidden gesture) ─────────
-// The whole recording at once (LONG_S at most) by transcription.ts — where each
-// step is, and what measured it. One engine of its own, keeping the frames'
-// spectra (keep_magnitudes): the 48-note energies read off them
-// (take_magnitude_features — take_features' bit for bit, the PCM not fed
-// twice) for the novelty (liveTempo.ts), the tempo, the quaver grid, the metre
-// and the bars; the fork's pitch-class notes with the energy of each octave of
-// their class (transcribe_notes); then FolkFriend's key detection
-// (contour_to_abc's K: line) on the notes found. Measured in Node on 6 minutes
-// of a session: 0.65 s with the SIMD build (2.8 s with the scalar one and the
-// PCM fed to two engines, as first written).
+// The whole recording at once (LONG_S at most): transcribeAudio.ts, where each step
+// is and what measured it.
 
-/** FolkFriend's contour alphabet: one letter a semitone from MIDI 48. */
-const CONTOUR_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV';
-
-/** The ABC of `pcm` at `rate` — its M:, L:, Q:, K: lines and the tune — or null
- *  when no tune was heard. */
+/** The ABC of `pcm` at `rate`, or null when no tune was heard. */
 async function writeOut(pcm: Float32Array, rate: number, onRatio: (r: number) => void): Promise<string | null> {
   await engine(); // the module's init
   await initTranscriptor(); // the notes' analysis in WebAssembly (else in TypeScript)
-  const f = new FolkFriendWASM();
-  // FolkFriend's cleaned class energies too: the decoder's extra view (folkfriendView.ts —
-  // the regime the recognition decodes in as well)
-  const view = new FolkFriendView(rate);
-  try {
-    f.set_sample_rate(rate);
-    f.keep_magnitudes();
-    const at = f.alloc_single_pcm_window();
-    const n = Math.floor(pcm.length / FF_PCM_WINDOW);
-    for (let i = 0; i < n; i++) {
-      f.get_allocated_pcm_window(at).set(pcm.subarray(i * FF_PCM_WINDOW, (i + 1) * FF_PCM_WINDOW));
-      f.feed_single_pcm_window(at);
-      if ((i & 255) === 0) onRatio((0.2 * i) / n);
-    }
-    const extra = view.of(pcm);
-    // FolkFriend's 48-note energies for the tempo, the metre and the key; the notes, and an
-    // onset function for the grid, from the transcription's own decoder (transcriptor/src:
-    // onsets every 5 ms, pitch read over whole notes — the transcriptor's research journal
-    // (outside the repo) has every measurement)
-    const features = f.take_magnitude_features();
-    onRatio(0.3);
-    const fps = rate / FF_PCM_WINDOW;
-    const heard = hear(pcm, rate, r => onRatio(0.3 + 0.65 * r), extra);
-    const classes = asClassNotes(heard.notes, fps);
-    onRatio(0.95);
-    const novelty = new Novelty().of(features);
-    const tempo = estimateRate(novelty, fps);
-    if (!tempo) return null;
-    const tune = transcribe(classes, gridNovelty(novelty, heard, FF_PCM_WINDOW), features, fps, tempo.rate, novelty);
-    if (!tune) return null;
-    const contour = quaverContour(tune).map(m => CONTOUR_CHARS[Math.min(95, Math.max(48, m)) - 48]).join('');
-    const key = (contour.length ? keyOfAbc(f.contour_to_abc(contour)) : null) ?? makeKey(0, 'maj');
-    return writeAbc(tune, key);
-  } finally {
-    f.free();
-    view.free();
-  }
+  return transcribeAudio(pcm, rate, onRatio);
 }
 
 /** At most this often — a message per frame would cost more than the work. */

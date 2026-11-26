@@ -559,6 +559,8 @@ export interface Key {
   signature: Record<string, number>;
   /** Flats in the signature: an accidental off the scale is written flat. */
   flat: boolean;
+  /** The tonic: its letter and pitch class. */
+  tonic: { letter: string; pc: number };
 }
 
 export function makeKey(tonic: number, mode: Mode): Key {
@@ -575,7 +577,7 @@ export function makeKey(tonic: number, mode: Mode): Key {
   });
   const t = scale[MODE_DEGREE[mode].step]!;
   const flat = Object.values(signature).some(a => a < 0);
-  return { name: `${t.letter}${t.alt > 0 ? '#' : t.alt < 0 ? 'b' : ''}${mode}`, signature, flat };
+  return { name: `${t.letter}${t.alt > 0 ? '#' : t.alt < 0 ? 'b' : ''}${mode}`, signature, flat, tonic: { letter: t.letter, pc: tonic } };
 }
 
 /** The key of FolkFriend's ABC (its "K:" line, contour_to_abc), or null. */
@@ -586,11 +588,27 @@ export function keyOfAbc(abc: string): Key | null {
   return makeKey(tonic, m[3] as Mode);
 }
 
-/** A MIDI pitch's letter and alteration in `key`: in the scale as the signature has it,
- *  otherwise a natural where one fits, else a sharp (a flat in a flat key). */
+/** A note off the scale, by its semitones above the tonic: the degree whose letter it takes,
+ *  as the tonic's major scale and its borrowed notes spell it — a raised 4th, the leading tone,
+ *  a 3rd, 6th or 7th lowered, or raised back in a minor or modal key: in G major, Bb and Eb,
+ *  not A# and D# (Antton's tune, 25-11); in D minor, the leading tone C#, not Db (Bédou, 25-11).
+ *  A semitone above the tonic (a lowered 2nd or a raised tonic) is left to the rules below. */
+const DEGREE_OF: Record<number, number> = { 0: 0, 2: 1, 3: 2, 4: 2, 5: 3, 6: 3, 7: 4, 8: 5, 9: 5, 10: 6, 11: 6 };
+
+/** A MIDI pitch's letter and alteration in `key`: in the scale as the signature has it, then
+ *  by its degree (DEGREE_OF), otherwise a natural where one fits, else a sharp (a flat in a
+ *  flat key). */
 function spell(midi: number, key: Key): { letter: string; alt: number } {
   const pc = ((midi % 12) + 12) % 12;
   for (const l of LETTERS) if ((NATURAL[l]! + key.signature[l]! + 12) % 12 === pc) return { letter: l, alt: key.signature[l]! };
+  const degree = DEGREE_OF[(pc - key.tonic.pc + 12) % 12];
+  if (degree !== undefined) {
+    const letter = LETTERS[(LETTERS.indexOf(key.tonic.letter) + degree) % 7]!;
+    let alt = (pc - NATURAL[letter]! + 24) % 12;
+    if (alt > 6) alt -= 12;
+    // (a double sharp or flat — G#min's F## — the writer cannot show: the rules below)
+    if (Math.abs(alt) <= 1) return { letter, alt };
+  }
   for (const l of LETTERS) if (NATURAL[l] === pc) return { letter: l, alt: 0 };
   for (const l of LETTERS) if ((NATURAL[l]! + (key.flat ? -1 : 1) + 12) % 12 === pc) return { letter: l, alt: key.flat ? -1 : 1 };
   return { letter: 'C', alt: 0 };
@@ -639,7 +657,8 @@ export function writeAbc(t: Transcription, key: Key): string {
     while (left > 0) {
       if (isBar(at)) {
         if (started) {
-          out += ' |';
+          // no space before a bar line, as TheSession writes them (Bédou, 23-11)
+          out += '|';
           barsOnLine++;
           if (barsOnLine >= BARS_PER_LINE) { out += '\n'; barsOnLine = 0; } else out += ' ';
         }
@@ -676,6 +695,6 @@ export function writeAbc(t: Transcription, key: Key): string {
     }
   }
   const tempo = t.metre === '6/8' ? `3/8=${Math.round(t.rate * 20)}` : `1/4=${Math.round(t.rate * 30)}`;
-  return [`M:${t.metre}`, 'L:1/8', `Q:${tempo}`, `K:${key.name}`, `${out.trim()} |]`].join('\n');
+  return [`M:${t.metre}`, 'L:1/8', `Q:${tempo}`, `K:${key.name}`, `${out.trim()}|]`].join('\n');
 }
 

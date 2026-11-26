@@ -229,7 +229,7 @@ describe('writeAbc', () => {
   it('writes a D major scale under its signature, beamed in fours', () => {
     const t = tune([[62, 1], [64, 1], [66, 1], [67, 1], [69, 1], [71, 1], [73, 1], [74, 1]], 8);
     const abc = writeAbc(t, makeKey(2, 'maj'));
-    expect(abc).toBe('M:4/4\nL:1/8\nQ:1/4=210\nK:Dmaj\nDEFG ABcd |]');
+    expect(abc).toBe('M:4/4\nL:1/8\nQ:1/4=210\nK:Dmaj\nDEFG ABcd|]');
     expect(played(abc)).toEqual(t.notes.map(n => [n.pitch, 1]));
   });
 
@@ -237,14 +237,14 @@ describe('writeAbc', () => {
     // in D major: F natural twice, then F natural in the next bar
     const t = tune([[65, 1], [65, 1], [64, 2], [62, 4], [65, 8]], 8);
     const abc = writeAbc(t, makeKey(2, 'maj'));
-    expect(abc.split('\n').pop()).toBe('=FF E2 D4 | =F8 |]');
+    expect(abc.split('\n').pop()).toBe('=FF E2 D4| =F8|]');
     expect(played(abc).map(p => p[0])).toEqual([65, 65, 64, 62, 65]);
   });
 
   it('ties a note across a bar line, and writes lengths a note can show', () => {
     const t = tune([[69, 6], [71, 5], [74, 5]], 8);
     const abc = writeAbc(t, makeKey(2, 'maj'));
-    expect(abc.split('\n').pop()).toBe('A6 B2- | B3 d4- d |]');
+    expect(abc.split('\n').pop()).toBe('A6 B2-| B3 d4- d|]');
     expect(played(abc)).toEqual([[69, 6], [71, 5], [74, 5]]);
   });
 
@@ -253,7 +253,7 @@ describe('writeAbc', () => {
     const abc = writeAbc(t, makeKey(7, 'maj'));
     expect(abc).toContain('M:6/8');
     expect(abc).toContain('Q:3/8=140');
-    expect(abc.split('\n').pop()).toBe('D | G3 B3 | d6 |]');
+    expect(abc.split('\n').pop()).toBe('D| G3 B3| d6|]');
   });
 
   it('writes broken pairs, played dotted', () => {
@@ -261,14 +261,34 @@ describe('writeAbc', () => {
     t.notes[0]!.broken = '>';
     t.notes[4]!.broken = '<';
     const abc = writeAbc(t, makeKey(9, 'min'));
-    expect(abc.split('\n').pop()).toBe('B>cdB c<B A2 |]');
+    expect(abc.split('\n').pop()).toBe('B>cdB c<B A2|]');
     expect(played(abc)).toEqual([[71, 1.5], [72, 0.5], [74, 1], [71, 1], [72, 0.5], [71, 1.5], [69, 2]]);
+  });
+
+  it('writes the leading tone as a sharp, even under flats (Bédou: Ddor\'s C# was written Db)', () => {
+    // a cadence on the tonic through its leading tone, in keys with flats and without
+    const cadence = (tonic: number): Transcription => tune([[tonic + 7, 2], [tonic - 1, 2], [tonic, 4]], 8);
+    expect(writeAbc(cadence(62), makeKey(2, 'min')).split('\n').pop()).toBe('A2 ^C2 D4|]');
+    expect(writeAbc(cadence(62), makeKey(2, 'dor')).split('\n').pop()).toBe('A2 ^C2 D4|]');
+    expect(writeAbc(cadence(67), makeKey(7, 'min')).split('\n').pop()).toBe('d2 ^F2 G4|]');
+    expect(writeAbc(cadence(67), makeKey(7, 'dor')).split('\n').pop()).toBe('d2 ^F2 G4|]');
+    expect(writeAbc(cadence(60), makeKey(0, 'min')).split('\n').pop()).toBe('G2 =B,2 C4|]');
+    expect(writeAbc(cadence(69), makeKey(9, 'min')).split('\n').pop()).toBe('e2 ^G2 A4|]');
+    // a 3rd, 6th or 7th lowered as flats, a raised 4th or 3rd as sharps, whatever the signature
+    expect(writeAbc(tune([[70, 2], [75, 2], [77, 2], [73, 2]], 8), makeKey(7, 'maj')).split('\n').pop()).toBe('_B2 _e2 =f2 ^c2|]');
+    expect(writeAbc(tune([[66, 2], [66, 2], [64, 4]], 8), makeKey(0, 'min')).split('\n').pop()).toBe('^F2 F2 =E4|]');
+    expect(writeAbc(tune([[66, 4], [62, 4]], 8), makeKey(2, 'min')).split('\n').pop()).toBe('^F4 D4|]');
+    // a semitone above the tonic by the older rule: in F major, a Db stays a flat
+    expect(writeAbc(tune([[61, 2], [62, 2]], 8), makeKey(5, 'maj')).split('\n').pop()).toBe('_D2 =D2|]');
+    for (const [t, k] of [[62, makeKey(2, 'min')], [67, makeKey(7, 'dor')], [60, makeKey(0, 'min')]] as const) {
+      expect(played(writeAbc(cadence(t), k))).toEqual([[t + 7, 2], [t - 1, 2], [t, 4]]);
+    }
   });
 
   it('writes a silence of a crotchet or more as a rest', () => {
     const notes: GridNote[] = [{ pitch: 62, at: 0, quavers: 4, sounds: 1 }, { pitch: 64, at: 4, quavers: 2, sounds: 1 }, { pitch: 66, at: 6, quavers: 2, sounds: 2 }];
     const t: Transcription = { notes, bars: [true, false, false, false, false, false, false, false, true], grid: [], metre: '4/4', rate: 7 };
-    expect(writeAbc(t, makeKey(2, 'maj')).split('\n').pop()).toBe('D z3 E2 F2 |]');
+    expect(writeAbc(t, makeKey(2, 'maj')).split('\n').pop()).toBe('D z3 E2 F2|]');
   });
 
   it('breaks the lines every 4 bars, and every note it plays is the transcription\'s', () => {
