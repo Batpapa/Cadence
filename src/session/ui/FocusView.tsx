@@ -5,7 +5,8 @@ import { anyOverlayOpen } from '../../components/overlayStack';
 import { ArrowLeftIcon, ArrowRightIcon, SkipToEndIcon } from '../../components/icons';
 import { EmptyState } from '../../components/ui';
 import type { Detection } from '../model';
-import { fmtLongTime, tuneName } from './sessionUiShared';
+import { fmtLongTime } from './sessionUiShared';
+import { tuneName } from './tuneNames';
 import type { ListGap } from './timelineModel';
 
 // ── The Focus view (2026-10-30) ──────────────────────────────────────────────

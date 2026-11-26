@@ -1,4 +1,5 @@
-import { titleCaseTuneName, downloadBlob, downloadTextFile } from '../utils';
+import { titleCaseTuneName } from '../services/tuneDisplayName';
+import { downloadBlob, downloadTextFile } from '../services/fileTransfer';
 import { analysisTextReport, clipEntryName } from '../services/analysisExport';
 import { exportSessionFile } from '../services/sessionShareService';
 import { buildZip, audioExtension, type ZipEntry } from '../services/zip';
@@ -66,7 +67,7 @@ function mmss(s: number): string {
   return h > 0 ? `${h}m${String(m).padStart(2, '0')}m${ss}` : `${m}m${ss}`;
 }
 
-/** The analyser's clip name (sessionUiShared.tsx's clipFileName), which this
+/** The analyser's clip name (clips.tsx's clipFileName), which this
  *  page cannot import — it reaches for the user's cards. Same shape: tune,
  *  analysis, range, with no colon for the file systems that refuse one. */
 function clipName(d: Detection, title: string, duration: number, extension: string): string {

@@ -4,7 +4,7 @@ import {
   sweepLocalAttachments, purgeCondemnedFiles, condemnAttachmentFile, condemnCardAttachments,
   replaceExternalBytes, attachmentBlob, isExternal, uploadAttachmentSoon,
 } from './attachmentStore';
-import { emptyState } from '../utils';
+import { emptyState } from './migration';
 import type { AppState, Card, FileAttachment } from '../types';
 
 // Property test of the externalised-attachment machinery (TODO §3.5, written

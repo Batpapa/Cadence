@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import type { RefObject, ComponentChild } from 'preact';
 import type { Attachment, AudioPreset, FileAttachment, FileEntry, EmbedEntry, Card, CardRef, ResolvableFile } from '../types';
 import { identityOf, type AttachmentIdentity, type AudioPresetsBinding } from '../services/audioPresets';
-import { generateId, addTouchDragSupport, downloadBlob, base64ToBlob, formatBytes, fileToEntry } from '../utils';
+import { generateId, formatBytes } from '../utils';
+import { addTouchDragSupport } from './touchDrag';
+import { downloadBlob, base64ToBlob, fileToEntry } from '../services/fileTransfer';
 import { hydratedEntry, AttachmentNotHere } from '../services/attachmentStore';
 import { alertModal } from './modal';
 import {
@@ -12,7 +14,8 @@ import {
 import { IconButton } from './ui';
 import { fromAttrs, originOf } from './navOrigin';
 import { useContextMenu } from './contextMenu';
-import { showPreviewModal, type PreviewSaveResult, type AudioSyncBinding, type AudioSyncCarry, type PreviewModalOpts } from './fileViewer';
+import { showPreviewModal } from './fileViewer';
+import type { PreviewSaveResult, AudioSyncBinding, AudioSyncCarry, PreviewModalOpts } from './viewerShared';
 import { cardAudioSync } from './cardAudioSync';
 import { theSessionEditGate } from './theSessionCopy';
 import { showRemoteFailure } from './remoteFailure';

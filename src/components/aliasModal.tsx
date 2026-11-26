@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { appState, mutate } from '../store';
 import { showModal, renderModalBody, MODAL_W } from './modal';
 import { IconButton, EmptyState } from './ui';
-import { focusIfDesktop } from '../utils';
+import { focusIfDesktop } from '../services/device';
 import { t } from '../services/i18nService';
 import { PencilIcon, TrashIcon, PromoteIcon } from './icons';
 import {

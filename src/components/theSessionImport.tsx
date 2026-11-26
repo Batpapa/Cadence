@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { render } from 'preact';
 import type { ComponentChild } from 'preact';
 import type { AppContext, Card } from '../types';
-import { generateId, focusIfDesktop, sortByRelevance, ownFormatAccept } from '../utils';
+import { generateId } from '../utils';
+import { focusIfDesktop, ownFormatAccept } from '../services/device';
+import { sortByRelevance } from '../services/nameSearch';
 import { parseCardPackage } from '../services/importExport';
 import { addCardsToDecks } from '../services/deckService';
 import { externaliseIncoming, uploadAttachmentSoon, mutateWithRule } from '../services/attachmentStore';
@@ -21,12 +23,13 @@ import { t } from '../services/i18nService';
 import { theSessionOffered, irishTuneInfoOffered } from '../services/extensions';
 import { modalMaxH, modalMaxW } from '../services/zoomService';
 import { IrishTuneInfoBody } from './irishTuneInfoImport';
-import { InputRow, SuggestDropdown, errorLine, successLine } from './importAtoms';
+import { InputRow, SuggestDropdown, ImportProgress, errorLine, successLine } from './importAtoms';
+import { useDebounce, useLatestOnly, useSuggestions } from './lookupHooks';
 import { showDeckChoiceModal } from './deckSelector';
 import { CheckIcon, ArrowLeftIcon, ArrowRightIcon, CrossIcon, ImportTrayIcon, SearchIcon, GlobeIcon, FileIcon, ShareIcon } from './icons';
 import { ChoiceCard, InlineStatus, Segmented } from './ui';
 import { registerOverlay } from './overlayStack';
-import { usePinnedTop, MODAL_BACKDROP, MODAL_TITLE_CLASS, MODAL_W } from './modal';
+import { usePinnedTop, useBackdropClose, MODAL_BACKDROP, MODAL_TITLE_CLASS, MODAL_W } from './modal';
 
 // ── Shared: import a batch of cards from a .cdc package (file or share key) ────
 // Dedupes on externalId when present (two independent shares of the same
@@ -98,28 +101,6 @@ function buildExistingByTuneId(): Map<number, string> {
 function parseIdList(text: string): number[] {
   if (!/^\d+(?:[;,\s]+\d+)+[;,\s]*$/.test(text)) return [];
   return [...new Set(text.split(/[;,\s]+/).filter(Boolean).map(Number).filter(n => Number.isFinite(n) && n > 0))];
-}
-
-/** Only the newest lookup gets to write. Every tab here previews what the user
- *  is typing, and typing an ID means several previews are in flight at once —
- *  each keystroke of "12" starts one. Without this, the LAST ANSWER TO ARRIVE
- *  wins rather than the last one asked for, and the two are not the same order:
- *  member 1 (the site's founder, eleven aggregate counts) answers in ~310 ms
- *  where an ordinary member or a 410 answers in ~130 ms. So "12" showed member
- *  1 — and, far worse than a wrong caption, ARMED THE IMPORT on him: the field
- *  read 12, the button would have fetched Jeremy's 526 tunes.
- *
- *  `cancel()` on every edit is half the point: it also stops an answer landing
- *  on a field the user has since cleared or changed. Debouncing merely reduces
- *  the number of racers; only this decides which one counts. */
-function useLatestOnly() {
-  const seq = useRef(0);
-  return {
-    /** Claims the slot; the returned test says whether it is still ours. */
-    begin: () => { const mine = ++seq.current; return () => mine === seq.current; },
-    /** Abandons whatever is in flight — its answer will not be written. */
-    cancel: () => { seq.current++; },
-  };
 }
 
 // ── TheSession body ───────────────────────────────────────────────────────────
@@ -277,11 +258,10 @@ function TuneTab({ setStatus, importTune, importIds, initialQuery }: {
   // touched by the single-tune path.
   const [busy, setBusy] = useState(false);
   const [batchBusy, setBatchBusy] = useState(false);
-  const [suggestions, setSuggestions] = useState<Array<{ id: number; name: string; type: string; via?: string }>>([]);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const suggestions = useSuggestions<{ id: number; name: string; type: string; via?: string }>();
   const [progress, setProgress] = useState<number | null>(null);
 
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debounce = useDebounce();
   const latest = useLatestOnly();
 
   useEffect(() => { focusIfDesktop(inputRef.current!); }, []);
@@ -316,10 +296,10 @@ function TuneTab({ setStatus, importTune, importIds, initialQuery }: {
   };
 
   const onInputChange = (val: string) => {
-    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    debounce.cancel();
     latest.cancel();
     setValue(val);
-    clearResult(); setStatus(''); setSuggestions([]); setDropdownOpen(false);
+    clearResult(); setStatus(''); suggestions.clear();
     const trimmed = val.trim();
     if (!trimmed) return;
     const ids = parseIdList(trimmed);
@@ -329,8 +309,8 @@ function TuneTab({ setStatus, importTune, importIds, initialQuery }: {
       return;
     }
     if (/^\d+$/.test(trimmed)) {
-      timerRef.current = setTimeout(async () => {
-        timerRef.current = null; setStatus(t('theSession.status.fetching'));
+      debounce.schedule(async () => {
+        setStatus(t('theSession.status.fetching'));
         const fresh = latest.begin();
         try {
           const tune = await fetchTuneById(parseInt(trimmed));
@@ -346,8 +326,8 @@ function TuneTab({ setStatus, importTune, importIds, initialQuery }: {
         }
       }, 150);
     } else if (trimmed.length >= 2) {
-      timerRef.current = setTimeout(async () => {
-        timerRef.current = null; setStatus(t('theSession.status.searching'));
+      debounce.schedule(async () => {
+        setStatus(t('theSession.status.searching'));
         try {
           let tunes: Array<{ id: number; name: string; type: string; via?: string }>;
           try {
@@ -369,8 +349,7 @@ function TuneTab({ setStatus, importTune, importIds, initialQuery }: {
             // TheSession names the alias it matched on; shown the same way.
             tunes = sortByRelevance(remote, trimmed).map(r => ({ ...r, via: r.alias }));
           }
-          setSuggestions(tunes);
-          setDropdownOpen(tunes.length > 0);
+          suggestions.show(tunes);
           setStatus(tunes.length ? '' : t('theSession.noResults'));
         } catch (e) { setStatus(errorLine(t('theSession.error', { message: e instanceof Error ? e.message : String(e) }))); }
       }, 300);
@@ -385,7 +364,7 @@ function TuneTab({ setStatus, importTune, importIds, initialQuery }: {
 
   const pick = (tune: { id: number; name: string; type: string }) => {
     setValue(tune.name);
-    setDropdownOpen(false);
+    suggestions.close();
     setPendingId(tune.id); setPendingIds(null);
     setInfo(`${tune.name} · ${tune.type}`);
     setStatus('');
@@ -409,10 +388,10 @@ function TuneTab({ setStatus, importTune, importIds, initialQuery }: {
           info={info}
           disabled={batchBusy}
           onInput={onInputChange}
-          onFocus={() => { if (suggestions.length) setDropdownOpen(true); }}
-          onBlur={() => setTimeout(() => setDropdownOpen(false), 150)}
+          onFocus={suggestions.onFocus}
+          onBlur={suggestions.onBlur}
           onKeyDown={(e) => {
-            if (e.key === 'Escape') { e.stopPropagation(); setDropdownOpen(false); }
+            if (e.key === 'Escape') { e.stopPropagation(); suggestions.close(); }
             if (e.key === 'Enter' && (pendingId !== null || pendingIds !== null)) doImport();
           }}
         />
@@ -421,17 +400,13 @@ function TuneTab({ setStatus, importTune, importIds, initialQuery }: {
         </button>
       </div>
 
-      {progress !== null && (
-        <div class="space-y-1">
-          <div class="knowledge-bar"><div class="knowledge-fill bg-accent" style={{ width: `${progress}%` }} /></div>
-        </div>
-      )}
+      <ImportProgress percent={progress} />
 
       <SuggestDropdown
         tourFloat
         anchorRef={inputRef}
-        items={suggestions}
-        open={dropdownOpen}
+        items={suggestions.items}
+        open={suggestions.open}
         onPick={pick}
         renderItem={(tune) => (
           <>
@@ -451,24 +426,33 @@ function TuneTab({ setStatus, importTune, importIds, initialQuery }: {
   );
 }
 
-// ── Tab: Member (ID or name search) ────────────────────────────────────────────
+// ── The member tabs: one field, three imports ─────────────────────────────────
+// Tunebook, bookmarks and sets all start from a member, found by id or by name,
+// and differ only in what they count once found and what they import. The
+// field, its lookup and its preview are one since 2026-11-26: each tab had a
+// copy of them, word for word.
 
-function MemberTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
-  getTargetDeckIds?: () => Set<string> | undefined;
-  withDeckChoice: (onReady: () => void, onCancel?: () => void) => void;
-  setStatus: (c: ComponentChild) => void;
-}) {
+/** What a member tab says of a member once found: what it would import from
+ *  them, and — when that is nothing — what to say instead. */
+interface MemberPreview {
+  name: string;
+  size: string;
+  /** Nothing to import: an ordinary account, not an error — said, and
+   *  nothing left to press. */
+  empty?: string;
+}
+
+/** A member tab's field: a member looked up by id or searched by name, and
+ *  previewed by the tab's own `preview`. `memberId` is set once one is found
+ *  with something to import. */
+function useMemberLookup(setStatus: (c: ComponentChild) => void, preview: (memberId: number) => Promise<MemberPreview>) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState('');
   const [info, setInfo] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [progress, setProgress] = useState<number | null>(null);
-  const [suggestions, setSuggestions] = useState<MemberSearchResult[]>([]);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const selectedMemberIdRef = useRef<number | null>(null);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [memberId, setMemberId] = useState<number | null>(null);
+  const suggestions = useSuggestions<MemberSearchResult>();
+  const debounce = useDebounce();
   const latest = useLatestOnly();
-  const [, bump] = useState(0);
 
   useEffect(() => { focusIfDesktop(inputRef.current!); }, []);
 
@@ -476,35 +460,131 @@ function MemberTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
   // and after a state update, so the `value` it closes over is the one from the
   // render that scheduled it — the text BEFORE the keystroke that asked for
   // this preview. The caller is the only one who knows without guessing.
-  const showMemberPreview = async (memberId: number, byId: boolean) => {
+  const showMemberPreview = async (id: number, byId: boolean) => {
     const fresh = latest.begin();
-    selectedMemberIdRef.current = null; bump(x => x + 1);
+    setMemberId(null);
     setInfo('');
     setStatus(t('theSession.status.fetching'));
     try {
-      const info = await fetchMemberInfo(memberId);
+      const found = await preview(id);
       if (!fresh()) return;
-      const size = t(info.tunebook === 1 ? 'theSession.member.tuneCount' : 'theSession.member.tuneCountPlural', { n: info.tunebook });
-      setInfo(byId ? `${info.name} · ${size}` : size);
-      // An empty tunebook is a perfectly ordinary account, not an error —
-      // say so, and leave nothing to press.
-      if (info.tunebook === 0) {
-        setStatus(t('theSession.member.emptyTunebook'));
-        selectedMemberIdRef.current = null; bump(x => x + 1);
-        return;
-      }
-      selectedMemberIdRef.current = memberId; bump(x => x + 1);
+      setInfo(byId ? `${found.name} · ${found.size}` : found.size);
+      if (found.empty) { setStatus(found.empty); return; }
+      setMemberId(id);
       setStatus('');
     } catch (e) {
       if (!fresh()) return;
       setStatus(errorLine(memberErrorStatus(e)));
-      selectedMemberIdRef.current = null; bump(x => x + 1);
+      setMemberId(null);
     }
   };
 
+  const onInput = (val: string) => {
+    debounce.cancel();
+    latest.cancel();
+    setValue(val);
+    setInfo(''); setMemberId(null);
+    suggestions.clear(); setStatus('');
+    const trimmed = val.trim();
+    if (!trimmed) return;
+    if (/^\d+$/.test(trimmed)) {
+      // Debounced like the name search beside it, which always was. An ID is
+      // typed digit by digit and every prefix is a valid member, so "12345"
+      // used to ask TheSession about five different people — and show whichever
+      // answered last.
+      debounce.schedule(() => { void showMemberPreview(parseInt(trimmed), true); }, 300);
+    } else if (trimmed.length >= 2) {
+      debounce.schedule(async () => {
+        setStatus(t('theSession.status.searching'));
+        try {
+          const members = await searchMembers(trimmed);
+          const sorted = sortByRelevance(members, trimmed);
+          suggestions.show(sorted);
+          setStatus(sorted.length ? '' : t('theSession.noResults'));
+        } catch (e) { setStatus(errorLine(t('theSession.error', { message: e instanceof Error ? e.message : String(e) }))); }
+      }, 300);
+    }
+  };
+
+  const pick = (m: MemberSearchResult) => {
+    setValue(m.name);
+    suggestions.close();
+    void showMemberPreview(m.id, false);
+    setStatus('');
+  };
+
+  return { inputRef, value, info, memberId, suggestions, onInput, pick };
+}
+
+/** A member tab on screen: the field, its import button, the bar of a batch
+ *  under way, the suggestions. */
+function MemberField({ lookup, busy, progress, importLabel, onImport }: {
+  lookup: ReturnType<typeof useMemberLookup>;
+  busy: boolean;
+  progress: number | null;
+  importLabel: string;
+  onImport: () => void;
+}) {
+  const { inputRef, value, info, memberId, suggestions, onInput, pick } = lookup;
+  return (
+    <>
+      <div class="flex gap-2">
+        <InputRow
+          inputRef={inputRef}
+          placeholder={t('theSession.member.placeholder')}
+          value={value}
+          info={info}
+          disabled={busy}
+          onInput={onInput}
+          onFocus={suggestions.onFocus}
+          onBlur={suggestions.onBlur}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') { e.stopPropagation(); suggestions.close(); }
+            if (e.key === 'Enter' && memberId !== null) onImport();
+          }}
+        />
+        <button class="btn-primary text-xs shrink-0" disabled={busy || memberId === null} onClick={onImport}>
+          {importLabel}
+        </button>
+      </div>
+
+      <ImportProgress percent={progress} />
+
+      <SuggestDropdown
+        tourFloat
+        anchorRef={inputRef}
+        items={suggestions.items}
+        open={suggestions.open}
+        onPick={pick}
+        renderItem={(m) => <span class="text-sm text-primary name-wrap">{m.name}</span>}
+      />
+    </>
+  );
+}
+
+interface MemberTabProps {
+  getTargetDeckIds?: () => Set<string> | undefined;
+  withDeckChoice: (onReady: () => void, onCancel?: () => void) => void;
+  setStatus: (c: ComponentChild) => void;
+}
+
+// ── Tab: Member (the member's whole tunebook) ─────────────────────────────────
+
+function MemberTab({ getTargetDeckIds, withDeckChoice, setStatus }: MemberTabProps) {
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
+  const lookup = useMemberLookup(setStatus, async (memberId) => {
+    const info = await fetchMemberInfo(memberId);
+    return {
+      name: info.name,
+      size: t(info.tunebook === 1 ? 'theSession.member.tuneCount' : 'theSession.member.tuneCountPlural', { n: info.tunebook }),
+      empty: info.tunebook === 0 ? t('theSession.member.emptyTunebook') : undefined,
+    };
+  });
+
   const doImportAll = async () => {
-    if (selectedMemberIdRef.current === null) return;
-    const memberId = selectedMemberIdRef.current;
+    const memberId = lookup.memberId;
+    if (memberId === null) return;
     setBusy(true);
     setProgress(0);
     setStatus(t('theSession.status.fetchingPage'));
@@ -541,86 +621,7 @@ function MemberTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
     }
   };
 
-  const onInputChange = (val: string) => {
-    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
-    latest.cancel();
-    setValue(val);
-    setInfo(''); selectedMemberIdRef.current = null; bump(x => x + 1);
-    setSuggestions([]); setDropdownOpen(false); setStatus('');
-    const trimmed = val.trim();
-    if (!trimmed) return;
-    if (/^\d+$/.test(trimmed)) {
-      // Debounced like the name search beside it, which always was. An ID is
-      // typed digit by digit and every prefix is a valid member, so "12345"
-      // used to ask TheSession about five different people — and show whichever
-      // answered last.
-      timerRef.current = setTimeout(() => {
-        timerRef.current = null;
-        void showMemberPreview(parseInt(trimmed), true);
-      }, 300);
-    } else if (trimmed.length >= 2) {
-      timerRef.current = setTimeout(async () => {
-        timerRef.current = null; setStatus(t('theSession.status.searching'));
-        try {
-          const members = await searchMembers(trimmed);
-          const sorted = sortByRelevance(members, trimmed);
-          setSuggestions(sorted);
-          setDropdownOpen(sorted.length > 0);
-          setStatus(sorted.length ? '' : t('theSession.noResults'));
-        } catch (e) { setStatus(errorLine(t('theSession.error', { message: e instanceof Error ? e.message : String(e) }))); }
-      }, 300);
-    }
-  };
-
-  const pick = (m: MemberSearchResult) => {
-    setValue(m.name);
-    setDropdownOpen(false);
-    void showMemberPreview(m.id, false);
-    setStatus('');
-  };
-
-  return (
-    <>
-      <div class="flex gap-2">
-        <InputRow
-          inputRef={inputRef}
-          placeholder={t('theSession.member.placeholder')}
-          value={value}
-          info={info}
-          disabled={busy}
-          onInput={onInputChange}
-          onFocus={() => { if (suggestions.length) setDropdownOpen(true); }}
-          onBlur={() => setTimeout(() => setDropdownOpen(false), 150)}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') { e.stopPropagation(); setDropdownOpen(false); }
-            if (e.key === 'Enter' && selectedMemberIdRef.current !== null) void doImportAll();
-          }}
-        />
-        <button
-          class="btn-primary text-xs shrink-0"
-          disabled={busy || selectedMemberIdRef.current === null}
-          onClick={() => void doImportAll()}
-        >
-          {t('theSession.member.importAll')}
-        </button>
-      </div>
-
-      {progress !== null && (
-        <div class="space-y-1">
-          <div class="knowledge-bar"><div class="knowledge-fill bg-accent" style={{ width: `${progress}%` }} /></div>
-        </div>
-      )}
-
-      <SuggestDropdown
-        tourFloat
-        anchorRef={inputRef}
-        items={suggestions}
-        open={dropdownOpen}
-        onPick={pick}
-        renderItem={(m) => <span class="text-sm text-primary name-wrap">{m.name}</span>}
-      />
-    </>
-  );
+  return <MemberField lookup={lookup} busy={busy} progress={progress} importLabel={t('theSession.member.importAll')} onImport={() => void doImportAll()} />;
 }
 
 // ── Tab: Bookmarks (the settings a member has starred) ────────────────────────
@@ -635,57 +636,24 @@ function MemberTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
 // What makes bookmarks worth their own tab: a bookmark names a SETTING, so each
 // tune created here opens on the very version the member starred.
 
-function BookmarksTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
-  getTargetDeckIds?: () => Set<string> | undefined;
-  withDeckChoice: (onReady: () => void, onCancel?: () => void) => void;
-  setStatus: (c: ComponentChild) => void;
-}) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [value, setValue] = useState('');
-  const [info, setInfo] = useState('');
+function BookmarksTab({ getTargetDeckIds, withDeckChoice, setStatus }: MemberTabProps) {
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
-  const [suggestions, setSuggestions] = useState<MemberSearchResult[]>([]);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const selectedMemberIdRef = useRef<number | null>(null);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const latest = useLatestOnly();
-  const [, bump] = useState(0);
-
-  useEffect(() => { focusIfDesktop(inputRef.current!); }, []);
-
-  // `byId` is passed, never re-derived from `value`: this runs after a debounce
-  // and after a state update, so the `value` it closes over is the one from the
-  // render that scheduled it — the text BEFORE the keystroke that asked for
-  // this preview. The caller is the only one who knows without guessing.
-  const showMemberPreview = async (memberId: number, byId: boolean) => {
-    const fresh = latest.begin();
-    selectedMemberIdRef.current = null; bump(x => x + 1);
-    setInfo('');
-    setStatus(t('theSession.status.fetching'));
-    try {
-      // Together, not one then the other: this tab is the only one whose
-      // preview needs two requests, and chaining them would make it the
-      // slowest of the four for no reason.
-      const [found, n] = await Promise.all([fetchMemberInfo(memberId), fetchMemberBookmarkCount(memberId)]);
-      if (!fresh()) return;
-      const size = t('theSession.bookmarks.count', { n });
-      setInfo(byId ? `${found.name} · ${size}` : size);
-      // A member who has bookmarked nothing is an ordinary account, not an
-      // error — say so, and leave nothing to press.
-      if (n === 0) { setStatus(t('theSession.bookmarks.none')); return; }
-      selectedMemberIdRef.current = memberId; bump(x => x + 1);
-      setStatus('');
-    } catch (e) {
-      if (!fresh()) return;
-      setStatus(errorLine(memberErrorStatus(e)));
-      selectedMemberIdRef.current = null; bump(x => x + 1);
-    }
-  };
+  const lookup = useMemberLookup(setStatus, async (memberId) => {
+    // Together, not one then the other: this tab is the only one whose
+    // preview needs two requests, and chaining them would make it the
+    // slowest of the four for no reason.
+    const [found, n] = await Promise.all([fetchMemberInfo(memberId), fetchMemberBookmarkCount(memberId)]);
+    return {
+      name: found.name,
+      size: t('theSession.bookmarks.count', { n }),
+      empty: n === 0 ? t('theSession.bookmarks.none') : undefined,
+    };
+  });
 
   const doImportAll = async () => {
-    if (selectedMemberIdRef.current === null) return;
-    const memberId = selectedMemberIdRef.current;
+    const memberId = lookup.memberId;
+    if (memberId === null) return;
     setBusy(true); setProgress(0);
     try {
       // Phase one: the listing, paged towards the total the endpoint reports.
@@ -749,79 +717,7 @@ function BookmarksTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
     }
   };
 
-  const onInputChange = (val: string) => {
-    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
-    latest.cancel();
-    setValue(val);
-    setInfo(''); selectedMemberIdRef.current = null; bump(x => x + 1);
-    setSuggestions([]); setDropdownOpen(false); setStatus('');
-    const trimmed = val.trim();
-    if (!trimmed) return;
-    if (/^\d+$/.test(trimmed)) {
-      // Debounced like the name search beside it, which always was. An ID is
-      // typed digit by digit and every prefix is a valid member, so "12345"
-      // used to ask TheSession about five different people — and show whichever
-      // answered last.
-      timerRef.current = setTimeout(() => {
-        timerRef.current = null;
-        void showMemberPreview(parseInt(trimmed), true);
-      }, 300);
-    } else if (trimmed.length >= 2) {
-      timerRef.current = setTimeout(async () => {
-        timerRef.current = null; setStatus(t('theSession.status.searching'));
-        try {
-          const members = await searchMembers(trimmed);
-          const sorted = sortByRelevance(members, trimmed);
-          setSuggestions(sorted);
-          setDropdownOpen(sorted.length > 0);
-          setStatus(sorted.length ? '' : t('theSession.noResults'));
-        } catch (e) { setStatus(errorLine(t('theSession.error', { message: e instanceof Error ? e.message : String(e) }))); }
-      }, 300);
-    }
-  };
-
-  return (
-    <>
-      <div class="flex gap-2">
-        <InputRow
-          inputRef={inputRef}
-          placeholder={t('theSession.member.placeholder')}
-          value={value}
-          info={info}
-          disabled={busy}
-          onInput={onInputChange}
-          onFocus={() => { if (suggestions.length) setDropdownOpen(true); }}
-          onBlur={() => setTimeout(() => setDropdownOpen(false), 150)}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') { e.stopPropagation(); setDropdownOpen(false); }
-            if (e.key === 'Enter' && selectedMemberIdRef.current !== null) void doImportAll();
-          }}
-        />
-        <button
-          class="btn-primary text-xs shrink-0"
-          disabled={busy || selectedMemberIdRef.current === null}
-          onClick={() => void doImportAll()}
-        >
-          {t('theSession.member.importAll')}
-        </button>
-      </div>
-
-      {progress !== null && (
-        <div class="space-y-1">
-          <div class="knowledge-bar"><div class="knowledge-fill bg-accent" style={{ width: `${progress}%` }} /></div>
-        </div>
-      )}
-
-      <SuggestDropdown
-        tourFloat
-        anchorRef={inputRef}
-        items={suggestions}
-        open={dropdownOpen}
-        onPick={(m) => { setValue(m.name); setDropdownOpen(false); void showMemberPreview(m.id, false); setStatus(''); }}
-        renderItem={(m) => <span class="text-sm text-primary name-wrap">{m.name}</span>}
-      />
-    </>
-  );
+  return <MemberField lookup={lookup} busy={busy} progress={progress} importLabel={t('theSession.member.importAll')} onImport={() => void doImportAll()} />;
 }
 
 // ── Tab: Sets (a member's published sets) ─────────────────────────────────────
@@ -830,60 +726,27 @@ function BookmarksTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
 // So this shares the tunebook tab's member lookup and differs after it: instead
 // of importing everything, it lists what the member has and lets you pick.
 
-function SetsTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
-  getTargetDeckIds?: () => Set<string> | undefined;
-  withDeckChoice: (onReady: () => void, onCancel?: () => void) => void;
-  setStatus: (c: ComponentChild) => void;
-}) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [value, setValue] = useState('');
-  const [info, setInfo] = useState('');
+function SetsTab({ getTargetDeckIds, withDeckChoice, setStatus }: MemberTabProps) {
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
-  const [suggestions, setSuggestions] = useState<MemberSearchResult[]>([]);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const selectedMemberIdRef = useRef<number | null>(null);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const latest = useLatestOnly();
-  const [, bump] = useState(0);
   /** False once the dialog is closed: an import under way stops, and writes
    *  nothing (importSets). */
   const aliveRef = useRef(true);
   useEffect(() => () => { aliveRef.current = false; }, []);
-
-  useEffect(() => { focusIfDesktop(inputRef.current!); }, []);
-
-  /** One cheap request that answers "does this member exist, and is there
-   *  anything to page through" before any paging begins. */
-  // `byId` is passed, never re-derived from `value`: this runs after a debounce
-  // and after a state update, so the `value` it closes over is the one from the
-  // render that scheduled it — the text BEFORE the keystroke that asked for
-  // this preview. The caller is the only one who knows without guessing.
-  const showMemberPreview = async (memberId: number, byId: boolean) => {
-    const fresh = latest.begin();
-    selectedMemberIdRef.current = null; bump(x => x + 1);
-    setInfo('');
-    setStatus(t('theSession.status.fetching'));
-    try {
-      const found = await fetchMemberInfo(memberId);
-      if (!fresh()) return;
-      const size = t('theSession.sets.count', { n: found.sets });
-      setInfo(byId ? `${found.name} · ${size}` : size);
-      // A member with no sets is an ordinary account, not an error — say so and
-      // leave nothing to press.
-      if (found.sets === 0) { setStatus(t('theSession.sets.none')); return; }
-      selectedMemberIdRef.current = memberId; bump(x => x + 1);
-      setStatus('');
-    } catch (e) {
-      if (!fresh()) return;
-      setStatus(errorLine(memberErrorStatus(e)));
-      selectedMemberIdRef.current = null; bump(x => x + 1);
-    }
-  };
+  // One cheap request that answers "does this member exist, and is there
+  // anything to page through" before any paging begins.
+  const lookup = useMemberLookup(setStatus, async (memberId) => {
+    const found = await fetchMemberInfo(memberId);
+    return {
+      name: found.name,
+      size: t('theSession.sets.count', { n: found.sets }),
+      empty: found.sets === 0 ? t('theSession.sets.none') : undefined,
+    };
+  });
 
   const doImportAll = async () => {
-    if (selectedMemberIdRef.current === null) return;
-    const memberId = selectedMemberIdRef.current;
+    const memberId = lookup.memberId;
+    if (memberId === null) return;
     setBusy(true); setProgress(0);
     let sets;
     try {
@@ -973,79 +836,7 @@ function SetsTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
     }
   };
 
-  const onInputChange = (val: string) => {
-    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
-    latest.cancel();
-    setValue(val);
-    setInfo(''); selectedMemberIdRef.current = null; bump(x => x + 1);
-    setSuggestions([]); setDropdownOpen(false); setStatus('');
-    const trimmed = val.trim();
-    if (!trimmed) return;
-    if (/^\d+$/.test(trimmed)) {
-      // Debounced like the name search beside it, which always was. An ID is
-      // typed digit by digit and every prefix is a valid member, so "12345"
-      // used to ask TheSession about five different people — and show whichever
-      // answered last.
-      timerRef.current = setTimeout(() => {
-        timerRef.current = null;
-        void showMemberPreview(parseInt(trimmed), true);
-      }, 300);
-    } else if (trimmed.length >= 2) {
-      timerRef.current = setTimeout(async () => {
-        timerRef.current = null; setStatus(t('theSession.status.searching'));
-        try {
-          const members = await searchMembers(trimmed);
-          const sorted = sortByRelevance(members, trimmed);
-          setSuggestions(sorted);
-          setDropdownOpen(sorted.length > 0);
-          setStatus(sorted.length ? '' : t('theSession.noResults'));
-        } catch (e) { setStatus(errorLine(t('theSession.error', { message: e instanceof Error ? e.message : String(e) }))); }
-      }, 300);
-    }
-  };
-
-  return (
-    <>
-      <div class="flex gap-2">
-        <InputRow
-          inputRef={inputRef}
-          placeholder={t('theSession.member.placeholder')}
-          value={value}
-          info={info}
-          disabled={busy}
-          onInput={onInputChange}
-          onFocus={() => { if (suggestions.length) setDropdownOpen(true); }}
-          onBlur={() => setTimeout(() => setDropdownOpen(false), 150)}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') { e.stopPropagation(); setDropdownOpen(false); }
-            if (e.key === 'Enter' && selectedMemberIdRef.current !== null) void doImportAll();
-          }}
-        />
-        <button
-          class="btn-primary text-xs shrink-0"
-          disabled={busy || selectedMemberIdRef.current === null}
-          onClick={() => void doImportAll()}
-        >
-          {t('theSession.sets.importAll')}
-        </button>
-      </div>
-
-      {progress !== null && (
-        <div class="space-y-1">
-          <div class="knowledge-bar"><div class="knowledge-fill bg-accent" style={{ width: `${progress}%` }} /></div>
-        </div>
-      )}
-
-      <SuggestDropdown
-        tourFloat
-        anchorRef={inputRef}
-        items={suggestions}
-        open={dropdownOpen}
-        onPick={(m) => { setValue(m.name); setDropdownOpen(false); void showMemberPreview(m.id, false); setStatus(''); }}
-        renderItem={(m) => <span class="text-sm text-primary name-wrap">{m.name}</span>}
-      />
-    </>
-  );
+  return <MemberField lookup={lookup} busy={busy} progress={progress} importLabel={t('theSession.sets.importAll')} onImport={() => void doImportAll()} />;
 }
 
 // ── New Card modal (hierarchical flow) ─────────────────────────────────────────
@@ -1368,7 +1159,7 @@ function NewCardModal({ ctx, initialDeckIds, preset, onClose }: { ctx: AppContex
 
   const onOpenCard = (cardId: string) => { ctx.navigate({ view: 'card', cardId }); onClose(); };
 
-  const mouseDownOnOverlay = useRef(false);
+  const backdrop = useBackdropClose(onClose);
   // ← pressed twice to climb two steps, the TheSession tabs gone through one
   // by one: every step and tab is its own height. See usePinnedTop.
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -1379,8 +1170,7 @@ function NewCardModal({ ctx, initialDeckIds, preset, onClose }: { ctx: AppContex
     <div
       ref={overlayRef}
       class={`fixed inset-0 z-50 flex ${pinned.overlayClass} justify-center ${MODAL_BACKDROP}`}
-      onMouseDown={(e) => { mouseDownOnOverlay.current = e.target === e.currentTarget; }}
-      onClick={(e) => { if (e.target === e.currentTarget && mouseDownOnOverlay.current) onClose(); }}
+      {...backdrop}
     >
       <div
         ref={dialogRef}

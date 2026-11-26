@@ -8,6 +8,29 @@ import { groupImportTags } from './tagGroups';
 
 export const SCHEMA_VERSION = 10;
 
+/** A state with nothing in it yet, at the schema version this build writes —
+ *  out of utils.ts since 2026-11-26, beside the version it is written at. */
+export function emptyState(): AppState {
+  return {
+    id: '',
+    name: 'Default',
+    language: 'en',
+    availabilityThreshold: 0.9,
+    weightByImportance: true,
+    forgettingRate: 1,
+    profileIds: [],
+    currentProfileId: '',
+    profiles: {},
+    cards: {},
+    decks: {},
+    cardWorks: {},
+    folders: {},
+    rootFolderIds: [],
+    rootDeckIds: [],
+    schemaVersion: SCHEMA_VERSION,
+  };
+}
+
 /** The oldest version still migrated. V0 → V1 (a no-op), V1 → V2 (files/embeds
  *  into attachments, 2026-04-20), V2 → V3 (profiles, 2026-04-20), V3 → V4
  *  (TheSession tag casing, 2026-05-14), V4 → V5 (card guids, 2026-06-12) and

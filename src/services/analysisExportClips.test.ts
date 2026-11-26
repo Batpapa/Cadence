@@ -19,8 +19,8 @@ vi.mock('../session/audio/clipExtract', () => ({
 }));
 
 const downloads: { blob: Blob; name: string }[] = [];
-vi.mock('../utils', async (orig) => ({
-  ...(await orig<typeof import('../utils')>()),
+vi.mock('./fileTransfer', async (orig) => ({
+  ...(await orig<typeof import('./fileTransfer')>()),
   downloadBlob: (blob: Blob, name: string) => { downloads.push({ blob, name }); },
 }));
 

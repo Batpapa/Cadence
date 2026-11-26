@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { removeCards, removeTagEverywhere } from './cardService';
 import { orphanedCardsAfterDeckRemoval } from './deckService';
-import { emptyState } from '../utils';
+import { emptyState } from './migration';
 import type { AppState } from '../types';
 
 // Deleting a card is the one operation here that cannot be undone, and it was

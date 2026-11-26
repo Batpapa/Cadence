@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { emptyState } from '../utils';
+import { emptyState } from './migration';
 import { addDefaultSamples, addIrishSamples, irishSampleTuneIds } from './sampleLibrary';
 import { normaliseState } from './stateNormalise';
 import type { TuneResult } from './theSessionService';

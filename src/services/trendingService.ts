@@ -1,6 +1,6 @@
 import type { PopularityDb } from '../trending/db';
 import type { TrendingGainMode } from '../types';
-import { normalizeDisplayName } from '../utils';
+import { normalizeDisplayName } from './tuneDisplayName';
 
 // ── Trending table computation ──────────────────────────────────────────────
 // Pure local computation over a synced PopularityDb (see trendingSyncService) —

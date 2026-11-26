@@ -1,5 +1,6 @@
 import { loadTuneNameIndexDb, saveTuneNameIndexDb, loadTuneAliasIndexDb, saveTuneAliasIndexDb, type LocalTune } from './tuneIndexDb';
-import { rankByRelevance, normalizeDisplayName } from '../utils';
+import { rankByRelevance } from './nameSearch';
+import { normalizeDisplayName } from './tuneDisplayName';
 
 // ── Local TheSession tune-name search ─────────────────────────────────────────
 // Same adactio/TheSession-data repo as trendingSyncService.ts (both

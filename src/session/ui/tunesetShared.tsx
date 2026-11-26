@@ -4,7 +4,8 @@ import { t } from '../../services/i18nService';
 import { PlusIcon, AddClipIcon, ClipAttachedIcon } from '../../components/icons';
 import { downloadIcon } from '../../components/playbackIcons';
 import { showDeckChoiceModal, decksContainingCard, isInEveryDeck, deckAddIcon } from '../../components/deckSelector';
-import { fileToEntry, downloadBlob, generateId } from '../../utils';
+import { generateId } from '../../utils';
+import { fileToEntry, downloadBlob } from '../../services/fileTransfer';
 import { attachmentFor, uploadAttachmentSoon, condemnAttachmentFile } from '../../services/attachmentStore';
 import { tunesetAbcPlaceholder, addTunesetAbcOnConvert, defaultTuneRepeat } from '../../services/abcService';
 import { retargetedHistory } from '../../services/reviewEntries';
@@ -14,12 +15,13 @@ import { detectionReviewId, reviewEntryTs } from '../reviewLink';
 import { cardsByTuneId, setCardFor } from '../tunesets';
 import { buildTunesetCard } from '../../services/tunesetCard';
 import { addCardsToDecks } from '../../services/deckService';
-import { fmtTime, type ClipSessionRef, type PreparedClip } from './sessionUiShared';
+import { fmtTime } from './sessionUiShared';
+import type { ClipSessionRef, PreparedClip } from './clips';
 import { hasLibrary } from '../../services/pageMode';
 
 // ── What a set heard in an analysis can be put through (2026-10-19) ──────────
 // The set's own twins of the detection's clip, rating and deck controls
-// (sessionUiShared.tsx). Same rules, one difference that runs through all of
+// (clips.tsx, reviewRetarget.ts, TuneDeckButton.tsx). Same rules, one difference that runs through all of
 // them: the card they act on is the SET card — the one made of exactly these
 // tunes in exactly this order (tunesets.ts's setCardFor) — never a tune's.
 
@@ -60,7 +62,7 @@ export async function attachSetClip(
 }
 
 /** attachSetClip's first half — the set's twin of prepareClip
- *  (sessionUiShared.tsx), for a batch that files every clip in one write. */
+ *  (clips.tsx), for a batch that files every clip in one write. */
 export async function prepareSetClip(
   session: ClipSessionRef,
   setCard: Card,
@@ -82,7 +84,7 @@ export function fileSetClip(s: AppState, setCardId: string, prepared: PreparedCl
 }
 
 /** Re-cuts the set's clip after a bound of one of its tunes moved the set's
- *  span — silent, as a detection's own re-cut is (sessionUiShared's
+ *  span — silent, as a detection's own re-cut is (clips.tsx's
  *  recutAttachedClip), and for the same reason: the clip promises the span. */
 export async function recutSetClip(
   ctx: AppContext,
@@ -165,7 +167,7 @@ export function SetClipControls({ session, setCard, span, audioAvailable, getAud
 }) {
   const [downloadTitle, setDownloadTitle] = useState(t('sessions.set.downloadClip'));
   const [downloading, setDownloading] = useState(false);
-  /** As ClipControls' (sessionUiShared.tsx): the reason a download failed,
+  /** As ClipControls' (clips.tsx): the reason a download failed,
    *  which the tooltip lost to the `finally` straight away. */
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [attachText, setAttachText] = useState<string | null>(null);

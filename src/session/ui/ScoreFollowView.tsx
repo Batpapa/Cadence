@@ -10,7 +10,7 @@ import type { ScoreEditor } from '../../components/scoreEditor';
 import { MATCH_GOOD, MATCH_USABLE, withPickup } from '../scoreFollow';
 import { signedKeyOffset } from '../model';
 import { keyGapText } from '../keyName';
-import type { AudioSyncState, AudioSyncView } from '../../components/fileViewer';
+import type { AudioSyncState, AudioSyncView } from '../../components/viewerShared';
 import { t } from '../../services/i18nService';
 import { formatBytes } from '../../utils';
 import { ExpandIcon, CollapseIcon } from '../../components/icons';

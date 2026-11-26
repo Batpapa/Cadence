@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import type { AudioSyncState, AudioSyncView } from '../../components/fileViewer';
+import type { AudioSyncState, AudioSyncView } from '../../components/viewerShared';
 import type { CardRecording } from '../../components/cardAudioSync';
 import { attachmentBlob, AttachmentNotHere } from '../../services/attachmentStore';
 import { getAttachmentBlob } from '../../services/attachmentDb';

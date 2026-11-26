@@ -1,7 +1,8 @@
 import { useState, useRef, useLayoutEffect } from 'preact/hooks';
 import { appState, navigate, mutate, getContext, leaveDeletedPage } from '../store';
 import { fromAttrs, originOf } from '../components/navOrigin';
-import { pct, timeAgo, availabilityColor, addTouchDragSupport } from '../utils';
+import { pct, timeAgo, availabilityColor } from '../utils';
+import { addTouchDragSupport } from '../components/touchDrag';
 import { CardSearchField } from '../components/cardSearchField';
 import { TrashIcon, StarIcon, PlusIcon, LibraryIcon, ChevronDownIcon } from '../components/icons';
 import { IconButton, Metric, EmptyState } from '../components/ui';

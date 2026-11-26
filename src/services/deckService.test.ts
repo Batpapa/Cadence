@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { pickSequential, advanceSkips, decksContainingCard, deckIdsByCard, addCardsToDecks } from './deckService';
-import { emptyState } from '../utils';
+import { emptyState } from './migration';
 import type { AppState, CardWork, Deck } from '../types';
 
 const PROFILE = 'p1';

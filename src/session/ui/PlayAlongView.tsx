@@ -9,14 +9,14 @@ import { devMode } from '../../services/devMode';
 import { qualityColour, LIVE_SCALE } from '../../components/followColour';
 import { CrossIcon, MinusIcon, PlusIcon, ExpandIcon, CollapseIcon, SaveIcon } from '../../components/icons';
 import { registerOverlay } from '../../components/overlayStack';
-import type { PlayAlongView } from '../../components/fileViewer';
+import type { PlayAlongView } from '../../components/viewerShared';
 import type { Attachment, ScoreFace } from '../../types';
 import { askRecordingName, recordingAttachment, stampedName, RecorderRow } from '../../components/recordMicModal';
 import { askUnsavedChanges } from '../../components/modal';
 import { NodeSlot } from '../../components/nodeSlot';
 import type { MemoryRecorder } from '../../thesessionEmbed/memoryRecorder';
 import { t } from '../../services/i18nService';
-import { downloadBlob } from '../../utils';
+import { downloadBlob } from '../../services/fileTransfer';
 
 // ── Play-along: the score following what is being played ─────────────────────
 // The score viewer's Play-along (2026-10-31, the user; out of developer mode

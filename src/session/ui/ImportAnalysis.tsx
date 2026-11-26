@@ -12,7 +12,8 @@ import { analysisView, analysisStudy, showsDetails, showsEditing, showsFocus } f
 import { FocusView, useFeedFocus } from './FocusView';
 import { recordOf } from '../tunesets';
 import { useAutoFollowScroll } from './domInterop';
-import { fmtLongTime, TitleRow, DateRow, indexProgressText, fmtEta, repinSessionDate } from './sessionUiShared';
+import { fmtLongTime, TitleRow, DateRow, indexProgressText, fmtEta } from './sessionUiShared';
+import { repinSessionDate } from './reviewRetarget';
 import { showDetectionTempo } from './LiveTempo';
 import { AnalysisFolderPicker } from './AnalysisFolderPicker';
 import { importPlaybackWarn } from './sessionStore';

@@ -1,5 +1,6 @@
-import { canInstallSignal, webAppInstalledSignal, isStandalone, isIOS, triggerInstall } from '../services/pwaService';
-import { isMacSafariInstallable } from '../utils';
+import { canInstallSignal, webAppInstalledSignal, isStandalone, triggerInstall } from '../services/pwaService';
+import { isAppleTouchDevice } from '../services/device';
+import { isMacSafariInstallable } from '../services/device';
 import { isNative } from '../native/platform';
 import { t } from '../services/i18nService';
 import { showModal } from './modal';
@@ -83,7 +84,7 @@ function showSteps(key: string): void {
 export function webAppInstallAction(): (() => void) | null {
   const canPrompt = canInstallSignal.value;
   if (isNative() || isStandalone()) return null;
-  const ios = isIOS();
+  const ios = isAppleTouchDevice();
   if (!canPrompt && !ios && !isMacSafariInstallable()) return null;
   return () => {
     if (canPrompt) { void triggerInstall(); return; }

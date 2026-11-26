@@ -2,7 +2,7 @@ import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import { showModal, closeModal, updateTopModal } from '../../components/modal';
-import { copyText } from '../../utils';
+import { copyText } from '../../services/fileTransfer';
 import { exportDetectedTunesCSV, exportDetectedTunesTXT, detectedTunesTextReport, type DetectedTuneLine } from '../../services/analysisExport';
 import { ShareChoiceCard, SHARE_ICON_CSV, SHARE_ICON_TXT, SHARE_ICON_FILE_UP, SHARE_ICON_CLIPBOARD } from './ShareSessionModal';
 

@@ -2,7 +2,7 @@ import { openMicForMusic, openDeviceAudio } from './capture';
 import { attachPcmWorklet } from './pcmWorklet';
 import { FILE_CHUNK_S, ANALYSIS_SAMPLE_RATE, DEBUG_LIVE_AUDIO, FF_SAMPLE_RATE_MIN, FF_SAMPLE_RATE_MAX } from '../sessionConfig';
 import { beginCaptureSession, endCaptureSession } from '../../services/audioSession';
-import { isAppleTouchDevice } from '../../utils';
+import { isAppleTouchDevice } from '../../services/device';
 import { isNative, hasNativePlugin } from '../../native/platform';
 
 // ── PCM source abstraction ────────────────────────────────────────────────────

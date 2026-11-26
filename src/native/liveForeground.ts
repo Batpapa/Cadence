@@ -49,7 +49,7 @@ function logPageLifecycle(): void {
 async function currentTuneText(detections: Detection[]): Promise<string | null> {
   const last = detections.reduce<Detection | null>((a, d) => (!a || d.start >= a.start ? d : a), null);
   if (!last) return null;
-  const { tuneName } = await import('../session/ui/sessionUiShared');
+  const { tuneName } = await import('../session/ui/tuneNames');
   return tuneName(last).text;
 }
 

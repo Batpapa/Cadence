@@ -4,7 +4,7 @@ import { MicIcon, FileAudioIcon, ImportTrayIcon, DeviceAudioIcon, ChevronDownIco
 import { CustomSelect } from '../../components/customSelect';
 import { canCaptureDeviceAudio, type LiveSourceKind } from '../audio/sources';
 import { isNative } from '../../native/platform';
-import { useTuneNames } from './sessionUiShared';
+import { useTuneNames } from './tuneNames';
 import { AnalysisBrowser } from './AnalysisBrowser';
 import { useAnalysesList } from './useAnalysesList';
 import { SearchField } from '../../components/searchField';

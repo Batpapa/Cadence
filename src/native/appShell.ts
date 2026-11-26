@@ -4,7 +4,7 @@ import { anyOverlayOpen, closeTopOverlay, onOverlaysChanged } from '../component
 import { canGoBack, routeSignal } from '../store';
 import { sessionRecordingSignal } from '../session/ui/sessionStore';
 import { PullToRefresh } from './pullToRefresh';
-import { touchDragActive } from '../utils';
+import { touchDragActive } from '../components/touchDrag';
 
 /**
  * The Android app's system Back.

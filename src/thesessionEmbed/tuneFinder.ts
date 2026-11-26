@@ -5,7 +5,7 @@ import { RecognitionClient } from '../session/recognitionClient';
 import { DetectionTracker } from '../session/detectionState';
 import { ANALYSIS_SAMPLE_RATE, HOP_S_IMPORT, IMPORT_MIN_S, importWarnMinutes } from '../session/sessionConfig';
 import { fetchRemoteFile, refusalMessage, RemoteFileError, MAX_REMOTE_ANALYSIS_BYTES } from '../services/remoteFile';
-import { isMobileDevice, isAppleTouchDevice } from '../utils';
+import { isMobileDevice, isAppleTouchDevice } from '../services/device';
 import type { Detection, DetectionAlternate } from '../session/model';
 import type { IndexProgress } from '../session/recognition/indexStore';
 import { MemoryRecorder } from './memoryRecorder';

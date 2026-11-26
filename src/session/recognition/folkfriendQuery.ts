@@ -1,7 +1,7 @@
 import { FolkFriendWASM } from '../../../vendor/folkfriend/folkfriend.js';
 import type { PlayedPitch } from './playedPitch';
 import { pitchClassesForDisplay } from './contourShift';
-import { normalizeDisplayName } from '../../utils';
+import { normalizeDisplayName } from '../../services/tuneDisplayName';
 import { signedKeyOffset, type WindowCandidate } from '../model';
 import { FF_TEMPO_MIN_BPM, FF_TEMPO_MAX_BPM, FF_QUERY_REPASS_SIZE, FF_MIN_QUERY_LENGTH } from '../sessionConfig';
 

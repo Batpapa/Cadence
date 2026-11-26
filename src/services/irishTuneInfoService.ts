@@ -1,5 +1,7 @@
 import type { Attachment, Card, FileEntry } from '../types';
-import { arrayBufferToBase64, generateId, normalizeDisplayName } from '../utils';
+import { generateId } from '../utils';
+import { arrayBufferToBase64 } from './fileTransfer';
+import { normalizeDisplayName } from './tuneDisplayName';
 import { sourceAliases } from './aliasService';
 import { withTuneIdentity } from './tuneFetchError';
 import { SCRAPER_BASE as BASE, markScraperServerWarm } from './scraperServerStatus';

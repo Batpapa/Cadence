@@ -1,5 +1,6 @@
 import type { Analysis } from '../session/model';
-import { base64ToBlob, generateId, downloadCadenceFile } from '../utils';
+import { generateId } from '../utils';
+import { base64ToBlob, downloadCadenceFile } from './fileTransfer';
 import { uploadShare, downloadShareBlob, type ShareUploadResult, type UploadShareOptions } from './shareService';
 import { saveSessionMeta, saveSessionAudio } from '../session/db';
 import { keepRecordings } from '../session/keepRecordings';

@@ -1,5 +1,4 @@
 import { signal } from '@preact/signals';
-import { isAppleTouchDevice } from '../utils';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
@@ -59,10 +58,6 @@ export function isStandalone(): boolean {
   return window.matchMedia('(display-mode: standalone)').matches ||
     window.matchMedia('(display-mode: fullscreen)').matches ||
     (navigator as any).standalone === true;
-}
-
-export function isIOS(): boolean {
-  return isAppleTouchDevice();
 }
 
 export async function triggerInstall(): Promise<void> {

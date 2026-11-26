@@ -1,6 +1,6 @@
 import type { AbcOpenMode, AbcPaper } from '../types';
-import { focusIfDesktop } from '../utils';
-import { mkCustomSelect } from './customSelectVanilla';
+import { focusIfDesktop } from '../services/device';
+import { mountCustomSelect } from './customSelect';
 import { iconElement, SwingStraightIcon, SwingLightIcon, SwingMediumIcon, SwingStrongIcon } from './icons';
 import { t } from '../services/i18nService';
 import {
@@ -139,12 +139,12 @@ export function showAbcPrefsModal(onApply: () => void, onSyntaxCheck?: () => voi
     const percent = isNaN(raw) ? DEFAULT_TEMPO_PERCENT
       : Math.max(MIN_TEMPO_PERCENT, Math.min(MAX_TEMPO_PERCENT, raw));
     speedInput.value = String(percent);
-    const instrument = getInstrument();
+    const program = instrument.getValue();
     void mutate(st => {
       // Absent rather than stored when it is the default: nothing to carry
       // through Drive, and nothing to explain to a future reader.
       if (percent === DEFAULT_TEMPO_PERCENT) delete st.abcTempoPercent; else st.abcTempoPercent = percent;
-      if (instrument === '') delete st.abcInstrument; else st.abcInstrument = parseInt(instrument, 10);
+      if (program === '') delete st.abcInstrument; else st.abcInstrument = parseInt(program, 10);
     });
   };
 
@@ -167,7 +167,7 @@ export function showAbcPrefsModal(onApply: () => void, onSyntaxCheck?: () => voi
 
   // ── Instrument ──
   const stored = appState.value.abcInstrument;
-  const { el: instrSelect, getValue: getInstrument } = mkCustomSelect(
+  const instrument = mountCustomSelect(
     ABC_INSTRUMENTS.map(i => ({ value: i.value, label: t(i.labelKey) })),
     stored === undefined ? '' : String(stored),
     // The instrument DOES re-prime: hearing it is the whole point of picking
@@ -176,7 +176,7 @@ export function showAbcPrefsModal(onApply: () => void, onSyntaxCheck?: () => voi
     'flex items-center gap-2 w-full text-sm bg-surface border border-border rounded-md px-3 py-1.5 text-primary cursor-pointer hover:border-accent',
   );
   // The select's own wrapper is `flex:1`, so it takes what the label leaves.
-  instrSelect.style.maxWidth = '14rem';
+  instrument.el.style.maxWidth = '14rem';
 
   // ── Write a set's repeats out ──
   // The odd one out here: speed and instrument describe how a score SOUNDS,
@@ -241,7 +241,7 @@ export function showAbcPrefsModal(onApply: () => void, onSyntaxCheck?: () => voi
   // flipping the one already on screen would answer a question nobody asked —
   // the tabs are right there, two centimetres away. The incipit reads the same
   // value, so a preference set here is honoured on the card page too.
-  const { el: openSelect } = mkCustomSelect(
+  const openOn = mountCustomSelect(
     [
       { value: 'sheet', label: t('fileViewer.abc.sheetTab') },
       { value: 'text',  label: t('fileViewer.abc.textTab') },
@@ -250,7 +250,7 @@ export function showAbcPrefsModal(onApply: () => void, onSyntaxCheck?: () => voi
     (v) => void mutate(st => { st.abcOpenMode = v as AbcOpenMode; }),
     'flex items-center gap-2 w-full text-sm bg-surface border border-border rounded-md px-3 py-1.5 text-primary cursor-pointer hover:border-accent',
   );
-  openSelect.style.maxWidth = '14rem';
+  openOn.el.style.maxWidth = '14rem';
 
   // ── How a score is DRAWN ──
   // Here rather than on the score's own toolbar (the user's call,
@@ -258,7 +258,7 @@ export function showAbcPrefsModal(onApply: () => void, onSyntaxCheck?: () => voi
   // dialog is for, while the toolbar is for what you reach for mid-tune.
   // Both re-apply at once — they change the engraving, and the score on
   // screen would otherwise go on showing the old one.
-  const { el: paperSelect } = mkCustomSelect(
+  const paperChoice = mountCustomSelect(
     [
       { value: ABC_PAPER_AUTO, label: t('fileViewer.abc.paper.theme') },
       { value: 'dark',  label: t('fileViewer.abc.paper.dark') },
@@ -278,25 +278,27 @@ export function showAbcPrefsModal(onApply: () => void, onSyntaxCheck?: () => voi
     },
     'flex items-center gap-2 w-full text-sm bg-surface border border-border rounded-md px-3 py-1.5 text-primary cursor-pointer hover:border-accent',
   );
-  paperSelect.style.maxWidth = '14rem';
+  paperChoice.el.style.maxWidth = '14rem';
 
   // "Bars per line" lived here until 2026-10-24: the score follows the lines
   // of the ABC now (see engraveScore), and cuts them only where they do not fit.
   body.append(
     row('fileViewer.abc.prefs.speed', speedControl),
     row('fileViewer.abc.prefs.swing', swingBtn),
-    row('fileViewer.abc.instrument', instrSelect),
-    row('fileViewer.abc.paper', paperSelect),
+    row('fileViewer.abc.instrument', instrument.el),
+    row('fileViewer.abc.paper', paperChoice.el),
     row('fileViewer.abc.prefs.includeRepeats', repeatsBox),
     row('fileViewer.abc.prefs.tapPlaysNote', tapBox),
     row('fileViewer.abc.prefs.syntaxCheck', syntaxBox),
     row('fileViewer.abc.prefs.suggestVersion', suggestBox),
-    row('fileViewer.abc.prefs.openOn', openSelect),
+    row('fileViewer.abc.prefs.openOn', openOn.el),
   );
 
   // No footer: nothing to confirm, so nothing to press. The ✕ is the only way
   // out, and it closes on a state that has already been saved.
-  showModal(t('fileViewer.abc.prefs.title'), body, []);
+  showModal(t('fileViewer.abc.prefs.title'), body, [], {
+    onDismiss: () => { for (const select of [instrument, openOn, paperChoice]) select.dispose(); },
+  });
   focusIfDesktop(speedInput);
 }
 

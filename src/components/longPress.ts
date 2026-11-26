@@ -66,6 +66,56 @@ export function createLongPressHandlers(
   };
 }
 
+/** The same gesture on an element built by hand (no Preact), with the right
+ *  click as its mouse form: `onPress` once per gesture, whichever way the
+ *  browser reports it. A touch held reports itself twice on Android — a
+ *  `contextmenu` as well as the hold this times — and only as the hold on
+ *  iOS, which has no contextmenu for it: the two are one gesture, done once,
+ *  the second ignored until the next touch. (The score viewer's audio sync
+ *  told them apart by 800 ms between the two until 2026-11-26.) `enabled` is
+ *  read at each press. Returns whether a click is the release of a hold that
+ *  has done its work, which the caller then ignores — true once. */
+export function bindLongPress(el: HTMLElement, onPress: () => void, enabled: () => boolean = () => true): () => boolean {
+  let timer = 0;
+  /** The last press was a touch, not the mouse. */
+  let touch = false;
+  /** That touch's gesture has done its work. */
+  let fired = false;
+  /** Its release is still to come as a click. */
+  let swallowClick = false;
+  const fire = (): void => {
+    window.clearTimeout(timer);
+    if (fired) return;
+    fired = true;
+    onPress();
+  };
+  // Its own callout and text selection kept off the element (iOS).
+  el.style.setProperty('-webkit-touch-callout', 'none');
+  el.style.userSelect = 'none';
+  el.addEventListener('pointerdown', (e) => {
+    window.clearTimeout(timer);
+    touch = e.pointerType !== 'mouse';
+    fired = false;
+    swallowClick = false;
+    if (!touch || !enabled()) return;
+    timer = window.setTimeout(() => { swallowClick = true; fire(); }, DEFAULT_MS);
+  });
+  for (const end of ['pointerup', 'pointercancel', 'pointerleave'] as const) {
+    el.addEventListener(end, () => window.clearTimeout(timer));
+  }
+  el.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    if (!enabled()) return;
+    if (touch) fire();
+    else onPress();
+  });
+  return () => {
+    const swallow = swallowClick;
+    swallowClick = false;
+    return swallow;
+  };
+}
+
 export function useLongPress(onLongPress: (clientX: number, clientY: number) => void, opts?: LongPressOptions) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const start = useRef<{ x: number; y: number } | null>(null);

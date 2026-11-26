@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { signal, type Signal } from '@preact/signals';
 import { t } from '../../services/i18nService';
-import { focusIfDesktop, formatBytes } from '../../utils';
+import { formatBytes } from '../../utils';
+import { focusIfDesktop } from '../../services/device';
 import { showModal, closeModal, renderModalBody, alertModal, MODAL_W } from '../../components/modal';
 import { safeExternalUrl } from '../../services/embedService';
 import {

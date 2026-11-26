@@ -20,8 +20,8 @@ vi.mock('../session/keepRecordings', () => ({ keepRecordings: { peek: () => true
 vi.mock('../session/recognition/indexStore', () => ({
   getSettingAbcMeta: async (id: string) => (id === 'card:g:h' ? { abc: 'X:1\nT:Mine\nK:D\nDEFG|', meter: '4/4', mode: 'Dmajor', dance: '', tune_id: 'card:g' } : null),
 }));
-vi.mock('../utils', async (importOriginal) => ({
-  ...await importOriginal<typeof import('../utils')>(),
+vi.mock('./fileTransfer', async (importOriginal) => ({
+  ...await importOriginal<typeof import('./fileTransfer')>(),
   downloadCadenceFile: (content: BlobPart, name: string) => { downloads.push({ content, name }); },
 }));
 

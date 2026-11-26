@@ -9,7 +9,8 @@ import {
   AUDIO_LIMITS, clipPresets, type AudioSettings, type ClipRequest,
 } from '../services/audioPresets';
 import { attachmentFor, uploadAttachmentSoon } from '../services/attachmentStore';
-import { base64ToBlob, fileToEntry, generateId } from '../utils';
+import { generateId } from '../utils';
+import { base64ToBlob, fileToEntry } from '../services/fileTransfer';
 
 // ── A clip cut from the audio player (2026-10-15) ────────────────────────────
 // The region on screen, copied packet for packet into a file of its own (the

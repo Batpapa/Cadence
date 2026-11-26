@@ -17,7 +17,7 @@ import type { Detection } from './model';
 // to the survivor unless that one has its own; another tune was not played
 // there, so its rating goes.
 //
-// Silent, as every other move of a rating is (sessionUiShared.tsx's
+// Silent, as every other move of a rating is (reviewRetarget.ts's
 // retargetReview): the user corrected nothing, the recording simply settled.
 
 type SessionRef = { id: string; date: string | null };

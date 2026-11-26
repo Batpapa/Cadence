@@ -3,7 +3,7 @@ import type { FileEntry } from '../types';
 import { hydratedEntry } from '../services/attachmentStore';
 import { copyCardFile } from '../services/cardFiles';
 import { showModal, closeModal, dismissTopModal } from './modal';
-import type { AudioSyncCarry } from './fileViewer';
+import type { AudioSyncCarry } from './viewerShared';
 import { t } from '../services/i18nService';
 
 // ── Editing TheSession's score: on a copy (2026-11-22, the user) ─────────────

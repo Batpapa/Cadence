@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
 import { t } from '../services/i18nService';
 import { modalMaxW, modalMaxH } from '../services/zoomService';
-import { showModal, closeModal, renderModalBody, MODAL_W, MODAL_BACKDROP, MODAL_TITLE_CLASS } from './modal';
+import { showModal, closeModal, renderModalBody, useBackdropClose, MODAL_W, MODAL_BACKDROP, MODAL_TITLE_CLASS } from './modal';
 import { PinIcon, PlusIcon, CrossIcon } from './icons';
 import { IconButton } from './ui';
 import { appState, mutate } from '../store';
@@ -287,7 +287,7 @@ function closePicker(): void {
 
 function DeckPickerPopover({ selected, onChange }: { selected: Set<string>; onChange: () => void }) {
   const [, bump] = useState(0);
-  const mouseDownOnOverlay = useRef(false);
+  const backdrop = useBackdropClose(closePicker);
 
   // Escape: see main.ts. This picker registers itself as an overlay, so the
   // single listener there closes it when it is the topmost thing — and leaves
@@ -309,8 +309,7 @@ function DeckPickerPopover({ selected, onChange }: { selected: Set<string>; onCh
   return (
     <div
       class={`fixed inset-0 z-50 flex items-center justify-center ${MODAL_BACKDROP}`}
-      onMouseDown={(e) => { mouseDownOnOverlay.current = e.target === e.currentTarget; }}
-      onClick={(e) => { if (e.target === e.currentTarget && mouseDownOnOverlay.current) closePicker(); }}
+      {...backdrop}
     >
       <div
         class="bg-elevated border border-border rounded-xl shadow-2xl w-full mx-4 flex flex-col overflow-hidden"

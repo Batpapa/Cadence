@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { isAppleTouchDevice, isMacSafariInstallable, ownFormatAccept } from './utils';
+import { isAppleTouchDevice, isMacSafariInstallable, ownFormatAccept } from './device';
 
 // Real user agents, as each device sends them.
 const UA = {

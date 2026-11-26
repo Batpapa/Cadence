@@ -1,5 +1,6 @@
 import type { AppState } from '../types';
-import { toDateStr, downloadCadenceFile } from '../utils';
+import { toDateStr } from '../utils';
+import { downloadCadenceFile } from './fileTransfer';
 import { buildZipBlob, readZipBlob, isZipBlob, audioExtension, ZIP32_MAX_BYTES, type ZipBlobEntry } from './zip';
 import { loadSessionAudio, saveSessionAudio } from '../session/db';
 import { analyserModuleOf } from '../session/model';

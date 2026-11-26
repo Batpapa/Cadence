@@ -11,7 +11,8 @@ import {
   approxTempo, currentPoint, detectionAt, inBeats, insideCurve, sessionCurve, summariseInside,
   type DetectionTempoCache, type TempoPoint,
 } from '../tempoSummary';
-import { fmtLongTime, tuneName } from './sessionUiShared';
+import { fmtLongTime } from './sessionUiShared';
+import { tuneName } from './tuneNames';
 import { beatOfDance, type Beat } from '../liveFollow';
 
 /** The session's curve counts in quavers: tunes of every dance on one axis. */

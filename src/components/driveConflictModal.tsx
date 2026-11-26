@@ -10,7 +10,7 @@ import {
   syncToCloud, manualSync, getLocalTimestamp, getDeviceId,
 } from '../services/driveService';
 import { applyFromDrive, appState } from '../store';
-import { copyText } from '../utils';
+import { copyText } from '../services/fileTransfer';
 import { saveSnapshot, countReviews, type SnapshotReason } from '../services/snapshotService';
 import { reuploadResurrected } from '../services/attachmentStore';
 import { statesEqual, diffStates, statePathDiff, briefValue, type StateDiff, type CollectionDiff, type PathDiff } from '../services/stateDiff';

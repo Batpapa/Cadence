@@ -63,6 +63,16 @@ export function InputRow({ placeholder, value, onInput, info, inputRef, title, o
   );
 }
 
+/** A batch import's bar, `percent` filled; nothing while none runs. */
+export function ImportProgress({ percent }: { percent: number | null }) {
+  if (percent === null) return null;
+  return (
+    <div class="space-y-1">
+      <div class="knowledge-bar"><div class="knowledge-fill bg-accent" style={{ width: `${percent}%` }} /></div>
+    </div>
+  );
+}
+
 /** Floating suggestion list anchored under an input — position computed at
  *  open-time (and whenever `items` changes), portaled to document.body so it
  *  isn't clipped by the modal's own overflow. Unmounts along with whatever

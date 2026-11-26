@@ -1,20 +1,22 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { ComponentChild } from 'preact';
 import { t } from '../../services/i18nService';
-import { focusIfDesktop, rankByRelevance, sortByRelevance } from '../../utils';
+import { focusIfDesktop } from '../../services/device';
+import { rankByRelevance, sortByRelevance } from '../../services/nameSearch';
 import { getContext } from '../../store';
 import { isTune } from '../../services/cardTypeService';
 import { hasLibrary } from '../../services/pageMode';
 import { detectionTuneId } from '../detections';
 import { cardScoreSettingId } from '../recognition/cardIndex';
 import { recognitionIndexesOf, type RecognitionIndexId } from '../recognition/recognitionIndexes';
-import { tuneName } from './sessionUiShared';
+import { tuneName } from './tuneNames';
 import type { Card } from '../../types';
 import { fetchTuneById, searchTunes, tuneTypeToMeter, type TuneResult } from '../../services/theSessionService';
 import { TuneUnavailableError } from '../../services/tuneFetchError';
 import { ensureTuneSearchIndex, searchLocalTuneIndex } from '../../services/tuneNameIndexService';
 import { PlusIcon } from '../../components/icons';
 import { InlineStatus } from '../../components/ui';
+import { useDebounce, useLatestOnly } from '../../components/lookupHooks';
 import type { DetectionAlternate } from '../model';
 
 // ── Naming a tune by hand ─────────────────────────────────────────────────────
@@ -176,15 +178,11 @@ export function TuneLookupField({ onResolved, trailing, onSubmit, autoFocus = tr
   /** The tune resolved, as the line under the field names it. */
   const [pending, setPending] = useState<({ name: string } & TuneFactsLine) | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
+  const debounce = useDebounce();
   // Only the answer to the LAST thing typed may land — typing an id starts one
   // lookup per keystroke, and they do not come back in the order they left.
-  // Same guard as the new-card modal's (theSessionImport.tsx's useLatestOnly).
-  const seq = useRef(0);
-  const begin = () => { const mine = ++seq.current; return () => mine === seq.current; };
+  const latest = useLatestOnly();
 
-  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); seq.current++; }, []);
   useEffect(() => { if (autoFocus && inputRef.current) focusIfDesktop(inputRef.current); }, []);
 
   /** Told to the caller as a detection's identity, or `null` while there is
@@ -213,7 +211,7 @@ export function TuneLookupField({ onResolved, trailing, onSubmit, autoFocus = tr
   /** A card picked: resolved at once. Its version is the card's score as it
    *  is (cardScoreSettingId), whichever ABC it holds when it is shown. */
   const reportCard = (card: Card) => {
-    seq.current++;
+    latest.cancel();
     const facts = cardFacts(card);
     const dance = facts.type;
     setPending({ name: card.name, ...facts });
@@ -252,7 +250,7 @@ export function TuneLookupField({ onResolved, trailing, onSubmit, autoFocus = tr
   };
 
   const resolve = async (id: number) => {
-    const fresh = begin();
+    const fresh = latest.begin();
     report(null);
     const answer = await fetchTheSession(id, fresh);
     if (typeof answer === 'string') setStatus(answer, true);
@@ -262,7 +260,7 @@ export function TuneLookupField({ onResolved, trailing, onSubmit, autoFocus = tr
    *  answers, so it is never ambiguous. Only TheSession's ids are numbers — a
    *  card answers for the TheSession tune it was imported from. */
   const resolveId = async (q: string) => {
-    const fresh = begin();
+    const fresh = latest.begin();
     report(null);
     let failure = t('theSession.id.notFound');
     for (const source of lookupOrder()) {
@@ -279,8 +277,8 @@ export function TuneLookupField({ onResolved, trailing, onSubmit, autoFocus = tr
   };
 
   const onInput = (val: string) => {
-    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
-    seq.current++;
+    debounce.cancel();
+    latest.cancel();
     setValue(val);
     report(null);
     setSuggestions([]);
@@ -288,13 +286,12 @@ export function TuneLookupField({ onResolved, trailing, onSubmit, autoFocus = tr
     const q = val.trim();
     if (!q) return;
     if (/^\d+$/.test(q)) {
-      timerRef.current = setTimeout(() => { timerRef.current = null; void resolveId(q); }, 150);
+      debounce.schedule(() => { void resolveId(q); }, 150);
       return;
     }
     if (q.length < 2) return;
-    timerRef.current = setTimeout(async () => {
-      timerRef.current = null;
-      const fresh = begin();
+    debounce.schedule(async () => {
+      const fresh = latest.begin();
       const order = lookupOrder();
       const lists = new Map<RecognitionIndexId, Suggestion[]>();
       /** Shown as far as the order has answered: the cards at once when they

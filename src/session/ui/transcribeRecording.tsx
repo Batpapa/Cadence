@@ -1,6 +1,7 @@
 import { signal, type Signal } from '@preact/signals';
 import { showModal, closeModalOf, renderModalBody, alertModal } from '../../components/modal';
-import { showPreviewModal, type AudioSyncBinding } from '../../components/fileViewer';
+import { showPreviewModal } from '../../components/fileViewer';
+import type { AudioSyncBinding } from '../../components/viewerShared';
 import { transcribeAudio } from '../scoreFollowClient';
 import { mountScoreFollow, failureText } from './ScoreFollowView';
 import { t } from '../../services/i18nService';

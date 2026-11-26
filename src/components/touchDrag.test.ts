@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { addTouchDragSupport, touchDragActive } from './utils';
+import { addTouchDragSupport, touchDragActive } from './touchDrag';
 
 // The touch polyfill against the case that broke it in the field (2026-10-14):
 // Chrome on Android starting its own drag of a `draggable` element on a long

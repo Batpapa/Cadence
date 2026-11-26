@@ -2,7 +2,9 @@
 import type { ComponentType } from 'preact';
 import { appState, navigate, mutate, getContext, replaceRoute, routeSignal } from '../store';
 import { fromAttrs, originOf } from '../components/navOrigin';
-import { pct, availabilityColor, scoreWithAliases, NO_SCORE_MATCH, timeAgo, copyText, formatBytes, type AliasMatch } from '../utils';
+import { pct, availabilityColor, timeAgo, formatBytes } from '../utils';
+import { scoreWithAliases, NO_SCORE_MATCH, type AliasMatch } from '../services/nameSearch';
+import { copyText } from '../services/fileTransfer';
 import { TrashIcon, SortAlphaIcon, ClockIcon, CalendarPlusIcon, StarIcon, CheckIcon, ScatterPlotIcon, GaugeIcon, FlameIcon, StudyIcon, ArrowLeftIcon, ArrowRightIcon, CrossIcon, PlusIcon, MoreHorizontalIcon, UploadIcon, NotesIcon, CopyIcon, ShareIcon, iconElement } from '../components/icons';
 import { CARD_TYPES, cardTypeLabelKey, knownCardType, isTune } from '../services/cardTypeService';
 import { CARD_SOURCES, cardSource, cardSourceLabel } from '../services/cardSourceService';
@@ -13,7 +15,7 @@ import { tagsWithTunes, setsMatchTuneTags } from '../services/cardRefService';
 import { CardMap } from '../components/cardMap';
 import { exportCards, exportCardsCSV, exportCardsTXT, cardsTextReport, cardPackageBlob } from '../services/importExport';
 import { uploadShare, isAbortError, ShareTooLargeError } from '../services/shareService';
-import { confirmModal, closeAllModals, MODAL_BACKDROP, MODAL_TITLE_CLASS, MODAL_W } from '../components/modal';
+import { confirmModal, closeAllModals, bindBackdropClose, MODAL_BACKDROP, MODAL_TITLE_CLASS, MODAL_W } from '../components/modal';
 import { modalMaxW, modalMaxH } from '../services/zoomService';
 import { askIncompleteExport } from '../components/incompleteExportModal';
 import { showDuplicateCardsModal } from '../components/duplicateCardModal';
@@ -134,9 +136,7 @@ function showExportModal(cards: Card[], user: AppState): void {
   const close = () => { shareAbort.abort(); unregister(); overlay.remove(); };
   unregister = registerOverlay(close);
   closeBtn.onclick = close;
-  let mouseDownOnOverlay = false;
-  overlay.addEventListener('mousedown', e => { mouseDownOnOverlay = e.target === overlay; });
-  overlay.addEventListener('click', e => { if (e.target === overlay && mouseDownOnOverlay) close(); });
+  bindBackdropClose(overlay, close);
 
   // The `.choice-card` row (ChoiceCard's vanilla twin): accent icon, the
   // description on screen rather than in a tooltip a finger never sees, and

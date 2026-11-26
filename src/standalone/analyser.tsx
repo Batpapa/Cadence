@@ -8,7 +8,7 @@ import { welcomeLanguage, ensureCurrentUser, ensureCurrentProfile } from '../ser
 import { applyTheme } from '../services/themeService';
 import { applyZoom } from '../services/zoomService';
 import { initPWA } from '../services/pwaService';
-import { emptyState } from '../utils';
+import { emptyState } from '../services/migration';
 import { openEphemeralUser, routeSignal, canGoBack, goBack, navigate, appState } from '../store';
 import { sessionsOf } from '../session/detections';
 import { runWithoutLibrary } from '../services/pageMode';

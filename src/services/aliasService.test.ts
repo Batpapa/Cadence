@@ -5,7 +5,7 @@ import {
 } from './aliasService';
 import { applyTheSessionAliases, applyTheSessionName, tuneResultToCard, type TuneResult } from './theSessionService';
 import { parseCardPackageFromText, cardsTextReport } from './importExport';
-import { rankByRelevance, scoreWithAliases, NO_SCORE_MATCH } from '../utils';
+import { rankByRelevance, scoreWithAliases, NO_SCORE_MATCH } from './nameSearch';
 import type { AppState, Card } from '../types';
 
 function card(over: Partial<Card> = {}): Card {

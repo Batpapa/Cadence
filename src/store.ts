@@ -1,6 +1,6 @@
 import { signal, effect } from '@preact/signals';
 import type { AppState, AppContext, Route } from './types';
-import { emptyState } from './utils';
+import { emptyState } from './services/migration';
 import { saveUser } from './db';
 import { userKey } from './userLocalKeys';
 import { syncToCloud } from './services/driveService';

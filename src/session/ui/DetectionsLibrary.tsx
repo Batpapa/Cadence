@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
-import { useTuneNames } from './sessionUiShared';
+import { useTuneNames } from './tuneNames';
 import { TuneRankingPanel, tuneFilterCount, type TuneViewState } from './TuneRankingPanel';
 import { FiltersButton, useFiltersPanel } from '../../components/filterSection';
 import { SearchField } from '../../components/searchField';

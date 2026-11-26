@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import { showModal, closeModal, renderModalBody } from '../../components/modal';
-import { downloadBlob, formatBytes } from '../../utils';
+import { formatBytes } from '../../utils';
+import { downloadBlob } from '../../services/fileTransfer';
 import { audioExtension } from '../../services/zip';
 import { fmtSessionDateTime } from '../sessionNaming';
 import { orphanAudio, retryRecovery, abandonRecovery, settleRecoveryFailure, type RecoveryFailure } from '../recovery';

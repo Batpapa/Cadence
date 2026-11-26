@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'preact/hooks';
 import type { RefObject } from 'preact';
 import { anyOverlayOpen } from './overlayStack';
-import { isAppleTouchDevice, touchDragActive } from '../utils';
+import { isAppleTouchDevice } from '../services/device';
+import { touchDragActive } from './touchDrag';
 // ── The drawer under a finger (2026-11-18) ───────────────────────────────────
 // Where the side panel is a drawer (the narrow layout), it opens with a swipe
 // to the right from the left edge, and closes with one to the left — on the

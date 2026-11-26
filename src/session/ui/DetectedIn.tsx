@@ -12,7 +12,8 @@ import type { Card } from '../../types';
 import { findSetHearings, chainSpan, recordOf } from '../tunesets';
 import { loadSessionAudio } from '../db';
 import { HeardSetAbc } from './abcPreview';
-import { fmtLongTime, tuneName } from './sessionUiShared';
+import { fmtLongTime } from './sessionUiShared';
+import { tuneName } from './tuneNames';
 import { SetClipControls } from './tunesetShared';
 import { chainPlayId } from './TunesetDetectionCard';
 

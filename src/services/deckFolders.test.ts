@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { folderChainIds } from './deckService';
-import { emptyState } from '../utils';
+import { emptyState } from './migration';
 import type { AppState } from '../types';
 
 function withFolders(): AppState {

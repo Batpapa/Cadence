@@ -4,7 +4,7 @@ import { showModal, renderModalBody, askUnsavedChanges, MODAL_W } from '../../co
 import { EmptyState } from '../../components/ui';
 import { renderNotes } from '../../components/markdown';
 import { PencilIcon } from '../../components/icons';
-import { focusIfDesktop } from '../../utils';
+import { focusIfDesktop } from '../../services/device';
 
 // ── An analysis's notes (2026-10-15) ──────────────────────────────────────────
 // Free text on a whole analysis — who played, where, what happened. Behind a

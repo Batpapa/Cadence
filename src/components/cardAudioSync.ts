@@ -1,5 +1,5 @@
 import type { Attachment, EmbedEntry, FileAttachment } from '../types';
-import type { AudioSyncBinding } from './fileViewer';
+import type { AudioSyncBinding } from './viewerShared';
 import type { FollowAudio } from '../session/scoreFollowClient';
 import { isFileEmbed } from '../services/embedService';
 import { typeFromUrl } from '../services/remoteFile';

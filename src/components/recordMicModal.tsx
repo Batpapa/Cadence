@@ -2,7 +2,7 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
 import { signal, computed, type Signal } from '@preact/signals';
 import type { Attachment } from '../types';
-import { fileToEntry } from '../utils';
+import { fileToEntry } from '../services/fileTransfer';
 import { attachmentFor } from '../services/attachmentStore';
 import { capturing } from '../services/audioSession';
 import { fmtTime } from '../services/audioPresets';
@@ -14,7 +14,7 @@ import { MemoryRecorder } from '../thesessionEmbed/memoryRecorder';
 import { appState } from '../store';
 import { showModal, closeModal, renderModalBody, askUnsavedChanges, MODAL_W } from './modal';
 import { MicIcon } from './icons';
-import { focusIfDesktop } from '../utils';
+import { focusIfDesktop } from '../services/device';
 import { t } from '../services/i18nService';
 
 // ── A file recorded on the spot ──────────────────────────────────────────────

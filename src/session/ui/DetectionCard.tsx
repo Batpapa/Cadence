@@ -13,7 +13,9 @@ import { AbcPreview, TuneFacts } from './abcPreview';
 import { PlayDisc, playFromTitle, detectionAudioSync } from './PassRow';
 import { scrollContainerOf } from './domInterop';
 import { showAlternatesPopover } from './AlternatesPopover';
-import { BUCKET_BADGE, tuneName, useTuneNames, TuneDeckButton, fmtLongTime } from './sessionUiShared';
+import { BUCKET_BADGE, fmtLongTime } from './sessionUiShared';
+import { tuneName, useTuneNames } from './tuneNames';
+import { TuneDeckButton } from './TuneDeckButton';
 import { getContext } from '../../store';
 import { viterbiPickOf, hasRecognisedSetting, keyOffsetOf, type Detection, type DetectionAlternate } from '../model';
 import { reviewEntryIndex } from '../../services/reviewEntries';
@@ -472,7 +474,7 @@ function NavigableName({ label, tuneId, settingId, knownCardId, onOpenCard, layo
   layout: 'inline' | 'below' | 'large';
 }) {
   // The card's name, else TheSession's, else the recogniser's re-cased — see
-  // tuneName in sessionUiShared. No CSS `capitalize` any more: it was what
+  // tuneName in tuneNames.ts. No CSS `capitalize` any more: it was what
   // produced "Mcgoldrick's", and each of the three sources above is already
   // cased properly.
   // A tune with no card is muted (2026-10-15, user's request): the eye picks

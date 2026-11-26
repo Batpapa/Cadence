@@ -1,7 +1,8 @@
 import { useState, useRef } from 'preact/hooks';
 import { appState, navigate, mutate, getContext, leaveDeletedPage } from '../store';
 import { fromAttrs, originOf } from '../components/navOrigin';
-import { generateId, DAY_NAMES_KEYS, timeAgo, pct, availabilityColor, addTouchDragSupport } from '../utils';
+import { generateId, DAY_NAMES_KEYS, timeAgo, pct, availabilityColor } from '../utils';
+import { addTouchDragSupport } from '../components/touchDrag';
 import { TrashIcon, StarIcon, LibraryIcon, WandIcon, FolderIcon, ChevronDownIcon, PlusIcon } from '../components/icons';
 import { IconButton, EmptyState } from '../components/ui';
 import { promptModal, confirmModal, confirmModalWithOption } from '../components/modal';

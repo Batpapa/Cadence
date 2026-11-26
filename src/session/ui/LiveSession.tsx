@@ -2,7 +2,7 @@ import type { ComponentChild } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import type { AppContext } from '../../types';
-import { isTouchPrimaryDevice, isAppleTouchDevice } from '../../utils';
+import { isTouchPrimaryDevice, isAppleTouchDevice } from '../../services/device';
 import { isNative } from '../../native/platform';
 import { offersPlayApp, PLAY_STORE_URL } from '../../components/installOffer';
 import { PlayIcon, PauseIcon, StopIcon } from '../../components/icons';

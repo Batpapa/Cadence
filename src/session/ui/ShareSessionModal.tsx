@@ -8,9 +8,10 @@ import { shareSession, exportSessionFile, packageSize } from '../../services/ses
 import { getShareCapacity, ShareTooLargeError, isAbortError } from '../../services/shareService';
 import { exportAnalysisCSV, exportAnalysisTXT, exportAnalysisClipsZip, analysisTextReport } from '../../services/analysisExport';
 import { isScraperServerWarm } from '../../services/scraperServerStatus';
-import { copyText, formatBytes } from '../../utils';
+import { formatBytes } from '../../utils';
+import { copyText } from '../../services/fileTransfer';
 import type { Analysis, Detection } from '../model';
-import { tuneName, useTuneNames } from './sessionUiShared';
+import { tuneName, useTuneNames } from './tuneNames';
 import { setDetectionOn } from '../detections';
 import { getContext } from '../../store';
 

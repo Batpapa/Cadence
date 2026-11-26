@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { ComponentChild } from 'preact';
 import type { AppContext, Card } from '../types';
-import { focusIfDesktop, sortByRelevance } from '../utils';
+import { focusIfDesktop } from '../services/device';
+import { sortByRelevance } from '../services/nameSearch';
 import { appState } from '../store';
 import {
   searchTunes, fetchTuneById, fetchPlaylist, fetchTunesByIds, fetchAudioFile,
@@ -15,26 +16,10 @@ import { showModal, closeModal, MODAL_W } from './modal';
 import { t } from '../services/i18nService';
 import { CheckIcon } from './icons';
 import { InlineStatus, Segmented, Switch } from './ui';
-import { InputRow, SuggestDropdown, errorLine, successLine } from './importAtoms';
+import { InputRow, SuggestDropdown, ImportProgress, errorLine, successLine } from './importAtoms';
+import { useDebounce, useLatestOnly, useSuggestions } from './lookupHooks';
 import { mutateWithRule } from '../services/attachmentStore';
 import { addCardsToDecks } from '../services/deckService';
-
-/** Only the newest lookup gets to write — a local copy of theSessionImport's
- *  (the field and its list are shared, in importAtoms.tsx; this hook is not).
- *
- *  The previews here are debounced, which keeps the racers down to one in
- *  ordinary typing, but a debounce cannot cancel a request already sent: clear
- *  the field while one is in flight and its answer still lands, arming the
- *  import on a tune or a playlist the field no longer names. Doubly worth
- *  having on this side — these calls go through the scraper, which is slower
- *  and rate-limited, so answers arrive further out of order than TheSession's. */
-function useLatestOnly() {
-  const seq = useRef(0);
-  return {
-    begin: () => { const mine = ++seq.current; return () => mine === seq.current; },
-    cancel: () => { seq.current++; },
-  };
-}
 
 const fetchingMsg  = () => isServerWarm() ? t('irishTuneInfo.status.fetching')  : t('irishTuneInfo.status.wakingServer');
 const searchingMsg = () => isServerWarm() ? t('irishTuneInfo.status.searching') : t('irishTuneInfo.status.wakingServer');
@@ -408,11 +393,10 @@ function TuneTab({ setStatus, importTune, importIds, initialQuery }: {
   // touched by the single-tune path.
   const [busy, setBusy] = useState(false);
   const [batchBusy, setBatchBusy] = useState(false);
-  const [suggestions, setSuggestions] = useState<TuneSearchResult[]>([]);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const suggestions = useSuggestions<TuneSearchResult>();
   const [progress, setProgress] = useState<number | null>(null); // null = hidden
 
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debounce = useDebounce();
   const latest = useLatestOnly();
 
   useEffect(() => { focusIfDesktop(inputRef.current!); }, []);
@@ -440,10 +424,10 @@ function TuneTab({ setStatus, importTune, importIds, initialQuery }: {
   };
 
   const onInputChange = (val: string) => {
-    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    debounce.cancel();
     latest.cancel();
     setValue(val);
-    clearResult(); setStatus(''); setSuggestions([]); setDropdownOpen(false);
+    clearResult(); setStatus(''); suggestions.clear();
     const trimmed = val.trim();
     if (!trimmed) return;
     const ids = parseIdList(trimmed);
@@ -453,8 +437,8 @@ function TuneTab({ setStatus, importTune, importIds, initialQuery }: {
       return;
     }
     if (/^\d+$/.test(trimmed)) {
-      timerRef.current = setTimeout(async () => {
-        timerRef.current = null; setStatus(fetchingMsg());
+      debounce.schedule(async () => {
+        setStatus(fetchingMsg());
         const fresh = latest.begin();
         try {
           const tune = await fetchTuneById(parseInt(trimmed));
@@ -465,13 +449,12 @@ function TuneTab({ setStatus, importTune, importIds, initialQuery }: {
         } catch { if (fresh()) setStatus(errorLine(t('irishTuneInfo.id.notFound'))); }
       }, 150);
     } else if (trimmed.length >= 2) {
-      timerRef.current = setTimeout(async () => {
-        timerRef.current = null; setStatus(searchingMsg());
+      debounce.schedule(async () => {
+        setStatus(searchingMsg());
         try {
           const tunes = await searchTunes(trimmed);
           const sorted = sortByRelevance(tunes, trimmed);
-          setSuggestions(sorted);
-          setDropdownOpen(sorted.length > 0);
+          suggestions.show(sorted);
           setStatus(sorted.length ? '' : t('irishTuneInfo.noResults'));
         } catch (e) { setStatus(errorLine(t('irishTuneInfo.error', { message: e instanceof Error ? e.message : String(e) }))); }
       }, 300);
@@ -485,7 +468,7 @@ function TuneTab({ setStatus, importTune, importIds, initialQuery }: {
 
   const pick = (tune: TuneSearchResult) => {
     setValue(tune.name);
-    setDropdownOpen(false);
+    suggestions.close();
     setPendingId(tune.id); setPendingIds(null);
     setInfo(`${tune.name} · ${tune.rhythm}`);
     setStatus('');
@@ -509,10 +492,10 @@ function TuneTab({ setStatus, importTune, importIds, initialQuery }: {
           info={info}
           disabled={batchBusy}
           onInput={onInputChange}
-          onFocus={() => { if (suggestions.length) setDropdownOpen(true); }}
-          onBlur={() => setTimeout(() => setDropdownOpen(false), 150)}
+          onFocus={suggestions.onFocus}
+          onBlur={suggestions.onBlur}
           onKeyDown={(e) => {
-            if (e.key === 'Escape') { e.stopPropagation(); setDropdownOpen(false); }
+            if (e.key === 'Escape') { e.stopPropagation(); suggestions.close(); }
             if (e.key === 'Enter' && (pendingId !== null || pendingIds !== null)) doImport();
           }}
         />
@@ -521,16 +504,12 @@ function TuneTab({ setStatus, importTune, importIds, initialQuery }: {
         </button>
       </div>
 
-      {progress !== null && (
-        <div class="space-y-1">
-          <div class="knowledge-bar"><div class="knowledge-fill bg-accent" style={{ width: `${progress}%` }} /></div>
-        </div>
-      )}
+      <ImportProgress percent={progress} />
 
       <SuggestDropdown
         anchorRef={inputRef}
-        items={suggestions}
-        open={dropdownOpen}
+        items={suggestions.items}
+        open={suggestions.open}
         onPick={pick}
         renderItem={(tune) => (
           <>
@@ -564,32 +543,31 @@ function PlaylistTab({ includeAudio, getTargetDeckIds, withDeckChoice, setStatus
 
   useEffect(() => { focusIfDesktop(inputRef.current!); }, []);
 
-  // Populated by showPreview, which already has every tune's ID for free
+  // Set by showPreview, which already has every tune's ID for free
   // (fetchPlaylist returns {id,name} per tune) — checked against the
   // TheSession mapping right there so doImportAll never needs a second
-  // username→ids round trip just to know what it's about to fetch.
-  const pendingUsernameRef = useRef<string | null>(null);
-  const pendingMappedRef = useRef<{ itiId: number; sessionId: number; name: string }[]>([]);
-  const pendingUnmappedIdsRef = useRef<number[]>([]);
-  // IrishTuneInfo id → name, straight off the playlist listing, so a failure
-  // in the IrishTuneInfo leg is reported by name and not by bare id.
-  const pendingNamesRef = useRef<Map<number, string>>(new Map());
-  const pendingCountRef = useRef(0);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // username→ids round trip just to know what it's about to fetch. Null
+  // until a playlist is found. `names`: IrishTuneInfo id → name, straight off
+  // the playlist listing, so a failure in the IrishTuneInfo leg is reported by
+  // name and not by bare id.
+  const [pending, setPending] = useState<{
+    mapped: { itiId: number; sessionId: number; name: string }[];
+    unmappedIds: number[];
+    names: Map<number, string>;
+    count: number;
+  } | null>(null);
+  const debounce = useDebounce();
   const latest = useLatestOnly();
-  const [, bump] = useState(0);
 
   const showPreview = async (username: string) => {
     const fresh = latest.begin();
-    pendingUsernameRef.current = null; pendingMappedRef.current = []; pendingUnmappedIdsRef.current = []; pendingCountRef.current = 0;
-    pendingNamesRef.current = new Map();
-    bump(x => x + 1);
+    setPending(null);
     setInfo('');
     setStatus(fetchingMsg());
     try {
       const playlist = await fetchPlaylist(username);
       if (!fresh()) return;
-      pendingNamesRef.current = new Map(playlist.tunes.map(pt => [pt.id, pt.name]));
+      const names = new Map(playlist.tunes.map(pt => [pt.id, pt.name]));
       const n = playlist.tunes.length;
       setInfo(n === 1 ? t('irishTuneInfo.playlist.preview', { count: n }) : t('irishTuneInfo.playlist.previewPlural', { count: n }));
       // Checked here (not just shown) so doImportAll never needs a second
@@ -597,10 +575,9 @@ function PlaylistTab({ includeAudio, getTargetDeckIds, withDeckChoice, setStatus
       // only appears once the user actually clicks Import, not here.
       const { mapped, unmapped } = await checkMapping(playlist.tunes.map(pt => pt.id), setStatus);
       if (!fresh()) return;
-      pendingMappedRef.current = mapped; pendingUnmappedIdsRef.current = unmapped;
-      pendingCountRef.current = n;
-      pendingUsernameRef.current = username; // gates only "found the user" — the button itself also checks pendingCountRef (empty playlist stays disabled)
-      bump(x => x + 1);
+      // Found the user — the button itself also checks the count (an empty
+      // playlist stays disabled).
+      setPending({ mapped, unmappedIds: unmapped, names, count: n });
       setStatus('');
     } catch {
       if (!fresh()) return;
@@ -609,13 +586,13 @@ function PlaylistTab({ includeAudio, getTargetDeckIds, withDeckChoice, setStatus
   };
 
   const doImportAll = async () => {
-    if (pendingUsernameRef.current === null) return;
+    if (pending === null) return;
     setBusy(true);
     setProgress(0);
 
     let useRedirect = false;
-    const pendingMapped = pendingMappedRef.current;
-    const pendingUnmappedIds = pendingUnmappedIdsRef.current;
+    const pendingMapped = pending.mapped;
+    const pendingUnmappedIds = pending.unmappedIds;
     if (pendingMapped.length > 0) {
       const choice = await promptUseTheSession(pendingMapped, pendingMapped.length + pendingUnmappedIds.length);
       if (choice === 'cancel') {
@@ -657,7 +634,7 @@ function PlaylistTab({ includeAudio, getTargetDeckIds, withDeckChoice, setStatus
       let existingCardIdByTuneId: Map<number, string> | null = null;
       if (ids.length > 0) {
         existingCardIdByTuneId = buildExistingByTuneId();
-        const { tunes, skippedIds } = await fetchTunesByIds(ids, onCombinedProgress, id => existingCardIdByTuneId!.has(id), includeAudio, pendingNamesRef.current);
+        const { tunes, skippedIds } = await fetchTunesByIds(ids, onCombinedProgress, id => existingCardIdByTuneId!.has(id), includeAudio, pending.names);
         itiNewCards = tunes.map(({ tune, audioFile }) => tuneToCard(tune, audioFile));
         itiSkippedIds = skippedIds;
       }
@@ -688,13 +665,13 @@ function PlaylistTab({ includeAudio, getTargetDeckIds, withDeckChoice, setStatus
   };
 
   const onInputChange = (val: string) => {
-    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    debounce.cancel();
     latest.cancel();
     setValue(val);
-    setInfo(''); pendingUsernameRef.current = null; bump(x => x + 1); setStatus('');
+    setInfo(''); setPending(null); setStatus('');
     const trimmed = val.trim();
     if (!trimmed) return;
-    timerRef.current = setTimeout(() => { timerRef.current = null; void showPreview(trimmed); }, 400);
+    debounce.schedule(() => { void showPreview(trimmed); }, 400);
   };
 
   return (
@@ -707,22 +684,18 @@ function PlaylistTab({ includeAudio, getTargetDeckIds, withDeckChoice, setStatus
           info={info}
           disabled={busy}
           onInput={onInputChange}
-          onKeyDown={(e) => { if (e.key === 'Enter' && pendingUsernameRef.current !== null) void doImportAll(); }}
+          onKeyDown={(e) => { if (e.key === 'Enter' && pending !== null) void doImportAll(); }}
         />
         <button
           class="btn-primary text-xs shrink-0"
-          disabled={busy || pendingUsernameRef.current === null || pendingCountRef.current === 0}
+          disabled={busy || pending === null || pending.count === 0}
           onClick={() => void doImportAll()}
         >
           {t('irishTuneInfo.playlist.importAll')}
         </button>
       </div>
 
-      {progress !== null && (
-        <div class="space-y-1">
-          <div class="knowledge-bar"><div class="knowledge-fill bg-accent" style={{ width: `${progress}%` }} /></div>
-        </div>
-      )}
+      <ImportProgress percent={progress} />
     </>
   );
 }

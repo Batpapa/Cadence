@@ -3,13 +3,15 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { render, Fragment } from 'preact';
 import type { ComponentChildren } from 'preact';
 import type { AppContext, IncipitDisplay } from '../types';
-import { generateId, emptyState, ownFormatAccept } from '../utils';
+import { generateId } from '../utils';
+import { emptyState } from '../services/migration';
+import { ownFormatAccept } from '../services/device';
 import { deleteLocalSessionData, localSessionAudioStats, freeableSessionAudio, freeSyncedSessionAudio } from '../session/db';
 import { deleteLocalAttachmentData, localAttachmentBytes } from '../services/attachmentDb';
 import { TrashIcon, ResetIcon, HelpIcon, ExpandIcon, CollapseIcon, CrossIcon, PlusIcon, MinusIcon, UploadIcon, ImportTrayIcon, studyIconSvg } from './icons';
 import { IconButton, Switch } from './ui';
 import { initialsOf } from './initials';
-import { confirmModal, closeModal, closeAllModals, showModal, renderModalBody, alertModal, MODAL_BACKDROP, MODAL_TITLE_CLASS, MODAL_W } from './modal';
+import { confirmModal, closeModal, closeAllModals, showModal, renderModalBody, alertModal, useBackdropClose, MODAL_BACKDROP, MODAL_TITLE_CLASS, MODAL_W } from './modal';
 import { getZoom, zoomIn, zoomOut, canZoomIn, canZoomOut, modalMaxH, modalMaxW, zoomWorks } from '../services/zoomService';
 import { playbackVolumePercent, setPlaybackVolumePercent, DEFAULT_VOLUME_PERCENT } from '../services/playbackVolume';
 import { getTheme, setTheme, type Theme } from '../services/themeService';
@@ -327,7 +329,7 @@ function DriveRow() {
   // Google's sign-in script, loaded as soon as this row shows rather than by
   // the press on "Connect": the sign-in window has to open within the press,
   // and Safari only allows that for about a second after it — less than the
-  // script can take to arrive. Same as the welcome screen (appRoot.tsx).
+  // script can take to arrive. Same as the welcome screen (userSelector.tsx).
   useEffect(() => { void initDriveClient().catch(() => { /* retried by the press itself */ }); }, []);
 
   const handleConnect = async (allowSharedAccount = false) => {
@@ -1535,7 +1537,7 @@ const NAV_LABELS_MIN_W = 420;
 function SettingsModal({ ctx, initialSection, onClose }: { ctx: AppContext; initialSection?: SectionId; onClose: () => void }) {
   const [section, setSection] = useState<SectionId>(initialSection ?? 'study');
   const [, bumpDialog] = useState(0);
-  const mouseDownOnOverlay = useRef(false);
+  const backdrop = useBackdropClose(onClose);
   // The same toggle as showModal's `expandable`, and like it not remembered:
   // a way to have more room now, on a phone above all, not a preference.
   const [expanded, setExpanded] = useState(false);
@@ -1569,8 +1571,7 @@ function SettingsModal({ ctx, initialSection, onClose }: { ctx: AppContext; init
   return (
     <div
       class={`fixed inset-0 z-50 flex items-center justify-center ${MODAL_BACKDROP}`}
-      onMouseDown={(e) => { mouseDownOnOverlay.current = e.target === e.currentTarget; }}
-      onClick={(e) => { if (e.target === e.currentTarget && mouseDownOnOverlay.current) onClose(); }}
+      {...backdrop}
     >
       <div
         ref={dialogRef}

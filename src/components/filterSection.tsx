@@ -3,7 +3,7 @@ import type { ComponentChildren } from 'preact';
 import type { FilterState } from '../types';
 import { t } from '../services/i18nService';
 import { ChevronDownIcon, FilterClearIcon, FilterIcon, FolderIcon, PencilIcon, VennAndIcon, VennOrIcon } from './icons';
-import { matchesSearch } from '../utils';
+import { matchesSearch } from '../services/nameSearch';
 import { DateField } from './dateField';
 import { IconButton } from './ui';
 

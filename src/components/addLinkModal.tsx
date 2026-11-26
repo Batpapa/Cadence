@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { signal, type Signal } from '@preact/signals';
 import type { Attachment, EmbedEntry, LinkMode } from '../types';
-import { generateId, focusIfDesktop } from '../utils';
+import { generateId } from '../utils';
+import { focusIfDesktop } from '../services/device';
 import { showModal, closeModal, renderModalBody, askUnsavedChanges, MODAL_W } from './modal';
 import { Segmented } from './ui';
 import { t } from '../services/i18nService';

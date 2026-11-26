@@ -1,5 +1,6 @@
 import type { Analysis, Detection } from '../session/model';
-import { downloadBlob, downloadTextFile, toDateStr } from '../utils';
+import { toDateStr } from '../utils';
+import { downloadBlob, downloadTextFile } from './fileTransfer';
 import { withChains } from '../session/ui/timelineModel';
 import { inBeats } from '../session/tempoSummary';
 import type { Beat } from '../session/liveFollow';

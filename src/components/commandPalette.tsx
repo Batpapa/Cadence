@@ -3,11 +3,11 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/ho
 import { createPortal } from 'preact/compat';
 import type { AppContext } from '../types';
 import { t } from '../services/i18nService';
-import { scoreMatch, scoreWithAliases, NO_SCORE_MATCH } from '../utils';
+import { scoreMatch, scoreWithAliases, NO_SCORE_MATCH } from '../services/nameSearch';
 import { registerOverlay } from './overlayStack';
 import { tagDisplay } from '../services/tagGroups';
 import { getZoom } from '../services/zoomService';
-import { MODAL_BACKDROP } from './modal';
+import { MODAL_BACKDROP, useBackdropClose } from './modal';
 import { SearchIcon } from './icons';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -158,13 +158,12 @@ function CommandPalette({ getCtx }: { getCtx: () => AppContext }) {
     // may have opened.
   };
 
-  const mouseDownOnOverlay = useRef(false);
+  const backdrop = useBackdropClose(closePalette);
 
   return (
     <div
       class={`fixed inset-0 z-[100] flex items-start justify-center pt-[15vh] ${MODAL_BACKDROP}`}
-      onMouseDown={(e) => { mouseDownOnOverlay.current = e.target === e.currentTarget; }}
-      onClick={(e) => { if (e.target === e.currentTarget && mouseDownOnOverlay.current) closePalette(); }}
+      {...backdrop}
     >
       <div class="bg-elevated border border-border rounded-xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden flex flex-col">
         <div class="flex items-center gap-3 px-4 py-3 border-b border-border">

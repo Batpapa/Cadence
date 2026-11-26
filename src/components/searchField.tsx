@@ -1,6 +1,6 @@
 import { useRef } from 'preact/hooks';
 import { t } from '../services/i18nService';
-import { focusIfDesktop } from '../utils';
+import { focusIfDesktop } from '../services/device';
 import { CrossIcon } from './icons';
 import { IconButton } from './ui';
 

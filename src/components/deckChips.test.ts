@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { emptyState } from '../utils';
+import { emptyState } from '../services/migration';
 import type { AppState, FilterState } from '../types';
 import { deckChipSection, deckChipKnown, NO_DECK } from './deckChips';
 import { folderChipKey } from './filterChips';

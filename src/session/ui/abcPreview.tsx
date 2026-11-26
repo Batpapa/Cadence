@@ -6,8 +6,9 @@ import { cardScoreIndex, decodeAbc, isAbcFile, isAbcLink, splitAbcTunes, buildHe
 import { fetchAbcLink, peekAbcLink } from '../../services/abcLink';
 import { hydratedEntry } from '../../services/attachmentStore';
 import { getAttachmentBlob } from '../../services/attachmentDb';
-import { arrayBufferToBase64 } from '../../utils';
-import { showPreviewModal, type AudioSyncBinding, type AudioSyncCarry } from '../../components/fileViewer';
+import { arrayBufferToBase64 } from '../../services/fileTransfer';
+import { showPreviewModal } from '../../components/fileViewer';
+import type { AudioSyncBinding, AudioSyncCarry } from '../../components/viewerShared';
 import { theSessionEditGate } from '../../components/theSessionCopy';
 import { updateCardFile } from '../../services/cardFiles';
 import { getContext } from '../../store';

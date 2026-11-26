@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Card } from '../types';
 import { t } from '../services/i18nService';
 import { appState } from '../store';
-import { focusIfDesktop, rankByRelevance } from '../utils';
+import { focusIfDesktop } from '../services/device';
+import { rankByRelevance } from '../services/nameSearch';
 import { CheckIcon } from './icons';
 
 // ── The one way to find a card of the library (2026-10-15) ──────────────────

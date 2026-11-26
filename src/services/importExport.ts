@@ -1,5 +1,6 @@
 import type { AppState, Card } from '../types';
-import { toDateStr, generateId, arrayBufferToBase64, downloadTextFile, downloadCadenceFile } from '../utils';
+import { toDateStr, generateId } from '../utils';
+import { arrayBufferToBase64, downloadTextFile, downloadCadenceFile } from './fileTransfer';
 import { SCHEMA_VERSION, stampTuneType, settleImportTags } from './migration';
 import { migrateClipTags } from './attachmentNames';
 import { migrateAudioMimeTypes } from './audioSniff';

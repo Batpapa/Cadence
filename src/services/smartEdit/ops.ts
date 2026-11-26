@@ -1,5 +1,6 @@
 import type { AppState, Attachment, Card, CardRef, SessionRating } from '../../types';
-import { generateId, arrayBufferToBase64 } from '../../utils';
+import { generateId } from '../../utils';
+import { arrayBufferToBase64 } from '../fileTransfer';
 import { removeCards } from '../cardService';
 import { isFolderDescendant, moveFolderToParent, moveDeckToParent } from '../deckService';
 import { CARD_TYPES, applyCardType, isTune, isTuneset } from '../cardTypeService';

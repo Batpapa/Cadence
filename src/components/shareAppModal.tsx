@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { t } from '../services/i18nService';
 import { ShareIcon, WhatsAppIcon, ExternalLinkIcon, GlobeIcon, GooglePlayIcon } from './icons';
-import { copyText } from '../utils';
+import { copyText } from '../services/fileTransfer';
 import { isNative } from '../native/platform';
 import { PLAY_STORE_LIVE, PLAY_STORE_URL } from './installOffer';
 import { Segmented } from './ui';

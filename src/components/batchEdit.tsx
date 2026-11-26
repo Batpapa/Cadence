@@ -10,7 +10,7 @@ import { cardTypeIcon } from './cardTypeIcon';
 import { CARD_TYPES, CARD_TYPE_TUNESET, cardTypeLabelKey, applyCardType, isTuneset } from '../services/cardTypeService';
 import { addTunesetAbcOnBecomingSet } from '../services/abcService';
 import { cardsPlayingInSets } from '../services/cardRefService';
-import { focusIfDesktop } from '../utils';
+import { focusIfDesktop } from '../services/device';
 import { t } from '../services/i18nService';
 import type { AppState, Card } from '../types';
 import { mutateWithRule } from '../services/attachmentStore';

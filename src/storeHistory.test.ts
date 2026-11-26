@@ -3,7 +3,7 @@
 // — in a bare node environment the import throws before a single test runs.
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { routeSignal, canGoBack, canGoForward, navigate, replaceRoute, initRoutePersistence, leaveStudy, leaveDeletedPage, appState, loadSavedRoute, takeBackFlash, navEntry, replaceSibling } from './store';
-import { emptyState } from './utils';
+import { emptyState } from './services/migration';
 import { TUNE_ANALYSER_MODULE_KEY } from './session/model';
 import type { AppState, Card, Route } from './types';
 

@@ -1,5 +1,6 @@
 import type { Card } from '../types';
-import { foldForSearch, normalizeDisplayName } from '../utils';
+import { foldForSearch } from './nameSearch';
+import { normalizeDisplayName } from './tuneDisplayName';
 
 // ── A card's other names ──────────────────────────────────────────────────────
 // Every read and write of `Card.aliases` goes through here, so the rules below

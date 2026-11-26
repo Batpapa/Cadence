@@ -1,7 +1,7 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { tIn, type Lang } from '../services/i18nService';
-import { copyText } from '../utils';
+import { copyText } from '../services/fileTransfer';
 import { TUNESET_NAME_SEPARATOR } from '../services/stateNormalise';
 import { DETECTION_TEMPORAL_CONFIG } from '../session/recognition/detectionTemporalConfig';
 import { withChains } from '../session/ui/timelineModel';

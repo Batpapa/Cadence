@@ -4,7 +4,7 @@ import { createPortal } from 'preact/compat';
 import { render } from 'preact';
 import type { ComponentChild } from 'preact';
 import { t } from '../services/i18nService';
-import { focusIfDesktop } from '../utils';
+import { focusIfDesktop } from '../services/device';
 import { modalMaxH, modalMaxW } from '../services/zoomService';
 import { ExpandIcon, CollapseIcon, ArrowLeftIcon, CrossIcon } from './icons';
 import { registerOverlay } from './overlayStack';
@@ -13,7 +13,7 @@ import { registerOverlay } from './overlayStack';
 // The shell (overlay, dialog frame, header, footer, stacking, outside-click
 // dismiss) is real Preact now, portaled into document.body via ModalHost —
 // mount <ModalHost/> once per Preact root (appRoot.tsx's AppRoot AND
-// UserSelector, since they're two independent roots and either one can be
+// userSelector.tsx's UserSelector, since they're two independent roots and either one can be
 // the only thing mounted at boot).
 //
 // showModal()'s `body` parameter is still a raw HTMLElement, on purpose:
@@ -134,6 +134,30 @@ export const MODAL_BACKDROP = 'bg-black/70 backdrop-blur-sm';
  *  2026-11-11), here and in the dialogs that draw their own frame. */
 export const MODAL_TITLE_CLASS = 'text-xs font-semibold text-muted uppercase tracking-widest truncate';
 
+/** What closes a dialog by its backdrop: a press that starts AND ends on it.
+ *  One that began inside — a drag selecting a field's text, released outside
+ *  — must not. Spread on the backdrop; here and in the dialogs that draw
+ *  their own frame (settings, new card, deck picker, command palette), which
+ *  each had a copy of it until 2026-11-26. */
+export function useBackdropClose(close: () => void, enabled = true) {
+  const downOnBackdrop = useRef(false);
+  return backdropHandlers(downOnBackdrop, close, enabled);
+}
+
+/** The same, on a backdrop built by hand (the library's export window). */
+export function bindBackdropClose(backdrop: HTMLElement, close: () => void): void {
+  const handlers = backdropHandlers({ current: false }, close, true);
+  backdrop.addEventListener('mousedown', handlers.onMouseDown);
+  backdrop.addEventListener('click', handlers.onClick);
+}
+
+function backdropHandlers(downOnBackdrop: { current: boolean }, close: () => void, enabled: boolean) {
+  return {
+    onMouseDown: (e: MouseEvent) => { downOnBackdrop.current = e.target === e.currentTarget; },
+    onClick: (e: MouseEvent) => { if (enabled && e.target === e.currentTarget && downOnBackdrop.current) close(); },
+  };
+}
+
 /** A centred dialog moves when its height changes: half the change goes on
  *  top. In a dialog pressed several times in a row at the same place, the
  *  second press then lands beside the control — and, when the dialog has just
@@ -217,10 +241,37 @@ const _unregisterByModalId = new Map<number, () => void>();
 // top". The overlay registry is that answer now, and nothing needs the
 // question any more.
 
+/** The one way a dialog goes, whichever closes it: off the stack and out of
+ *  the overlay registry. `dismissed`: as a dismissal, its `onDismiss` run —
+ *  which is where a Preact body unmounts itself (renderModalBody). Nothing
+ *  when it has gone already. Each closing below used to do this by hand, four
+ *  copies of the same three lines (until 2026-11-26). */
+function removeModal(entry: ModalEntry, dismissed: boolean): void {
+  if (!modalStack.value.some(e => e.id === entry.id)) return;
+  _unregisterByModalId.get(entry.id)?.();
+  _unregisterByModalId.delete(entry.id);
+  modalStack.value = modalStack.value.filter(e => e.id !== entry.id);
+  if (dismissed) entry.onDismiss?.();
+}
+
+/** A USER dismissal (✕, Escape, the back gesture, a click outside): its guard
+ *  asked first. True when it went through now; false when the guard holds it
+ *  — still open, and whatever the guard put on top is the topmost layer. The
+ *  end comes by `removeModal` with the entry itself rather than "the top": a
+ *  guarded dismissal completes after a question of its own has been opened
+ *  and closed above it, and possibly after a save that asked something too —
+ *  by then nothing says the dialog is still on top, only that it is still
+ *  there. */
+function userDismiss(entry: ModalEntry): boolean {
+  if (entry.guardDismiss?.(() => removeModal(entry, true))) return false;
+  removeModal(entry, true);
+  return true;
+}
+
+/** Pops the topmost modal — the code's own closing: no guard, no `onDismiss`. */
 export function closeModal(): void {
   const top = modalStack.value[modalStack.value.length - 1];
-  if (top) { _unregisterByModalId.get(top.id)?.(); _unregisterByModalId.delete(top.id); }
-  modalStack.value = modalStack.value.slice(0, -1);
+  if (top) removeModal(top, false);
 }
 
 /** Closes the modal showing `body`, wherever it stands in the stack — for one
@@ -229,10 +280,7 @@ export function closeModal(): void {
  *  open any more. */
 export function closeModalOf(body: HTMLElement): void {
   const entry = modalStack.value.find(e => e.body === body);
-  if (!entry) return;
-  _unregisterByModalId.get(entry.id)?.();
-  _unregisterByModalId.delete(entry.id);
-  modalStack.value = modalStack.value.filter(e => e !== entry);
+  if (entry) removeModal(entry, false);
 }
 
 /** Closes the topmost modal as a dismissal does, its `onDismiss` run — past
@@ -241,7 +289,7 @@ export function closeModalOf(body: HTMLElement): void {
  *  left that viewer's audio sync playing behind the new one (2026-11-23). */
 export function dismissTopModal(): void {
   const top = modalStack.value[modalStack.value.length - 1];
-  if (top) completeDismiss(top);
+  if (top) removeModal(top, true);
 }
 
 /** Pops the whole stack, running every entry's `onDismiss`. For the rare
@@ -249,8 +297,9 @@ export function dismissTopModal(): void {
  *  dialogs below it hanging over a view they have nothing to do with. */
 export function closeAllModals(): void {
   const open = modalStack.value;
-  for (const e of open) { _unregisterByModalId.get(e.id)?.(); _unregisterByModalId.delete(e.id); }
-  modalStack.value = [];
+  // All off first, then every `onDismiss`: one that closes or opens a dialog
+  // of its own finds the stack already empty.
+  for (const entry of open) removeModal(entry, false);
   for (const entry of open) entry.onDismiss?.();
 }
 
@@ -279,34 +328,18 @@ export function setModalMaxWidth(body: HTMLElement, maxWidth: string): void {
 
 /** Closes modal `id` the way a USER dismissal does — which is not what
  *  `closeModal` alone does: that one pops the stack and stops there, while a
- *  dismissal also runs `onDismiss`, and `onDismiss` is where a Preact body
- *  unmounts itself (renderModalBody). The back gesture used to take the first
+ *  dismissal also runs `onDismiss`. The back gesture used to take the first
  *  path and leaked a mounted tree per dialog it closed.
  *
  *  Refuses — returns false — for anything but the topmost dialog, and for one
  *  declared `dismissable: false`: those exist to hold a decision (a Drive
- *  conflict, an account switch) and have no way out on purpose. */
+ *  conflict, an account switch) and have no way out on purpose. Held by its
+ *  guard counts as a refusal too, so the gesture goes no further. */
 function dismissModalById(id: number): boolean {
   const stack = modalStack.value;
   const top = stack[stack.length - 1];
   if (!top || top.id !== id || !top.dismissable) return false;
-  // Held: still open, and whatever its guard put on top is the topmost layer
-  // now. Counted as a refusal, so the gesture goes no further.
-  if (top.guardDismiss?.(() => completeDismiss(top))) return false;
-  completeDismiss(top);
-  return true;
-}
-
-/** The end of a user dismissal, by id rather than by "the top": a guarded one
- *  completes after a question of its own has been opened and closed above it,
- *  and possibly after a save that asked something too — by then nothing says
- *  the dialog is still on top, only that it is still there. */
-function completeDismiss(entry: ModalEntry): void {
-  if (!modalStack.value.some(e => e.id === entry.id)) return;
-  _unregisterByModalId.get(entry.id)?.();
-  _unregisterByModalId.delete(entry.id);
-  modalStack.value = modalStack.value.filter(e => e.id !== entry.id);
-  entry.onDismiss?.();
+  return userDismiss(top);
 }
 
 export function showModal(title: string, body: HTMLElement, actions: ModalAction[], opts: ModalOptions = {}): void {
@@ -545,7 +578,6 @@ function ModalTitle({ title, titleEdit, nameTitle }: { title: string; titleEdit?
 }
 
 function ModalDialog({ entry }: { entry: ModalEntry }) {
-  const mouseDownOnOverlay = useRef(false);
   // Local, so it dies with the dialog — see ModalOptions.expandable on why
   // this is not remembered. ModalHost keys on entry.id, so the state survives
   // every re-render of the stack and only that.
@@ -554,10 +586,8 @@ function ModalDialog({ entry }: { entry: ModalEntry }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   // Not while expanded: the dialog is the whole page then, with no top to hold.
   const pinned = usePinnedTop(entry.pinTop && !expanded, overlayRef, dialogRef);
-  const dismiss = () => {
-    if (entry.guardDismiss?.(() => completeDismiss(entry))) return;
-    completeDismiss(entry);
-  };
+  const dismiss = () => { userDismiss(entry); };
+  const backdrop = useBackdropClose(dismiss, entry.dismissable);
 
   // Before the browser paints, not after: the body sizes itself against this,
   // and an effect-driven answer would show one frame at the wrong height.
@@ -575,8 +605,7 @@ function ModalDialog({ entry }: { entry: ModalEntry }) {
     <div
       ref={overlayRef}
       class={`fixed inset-0 z-50 flex ${pinned.overlayClass} justify-center ${MODAL_BACKDROP}`}
-      onMouseDown={(e) => { mouseDownOnOverlay.current = e.target === e.currentTarget; }}
-      onClick={(e) => { if (entry.dismissable && e.target === e.currentTarget && mouseDownOnOverlay.current) dismiss(); }}
+      {...backdrop}
     >
       <div
         ref={dialogRef}

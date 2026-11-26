@@ -12,7 +12,7 @@
 // through to the plain-text view.
 
 import type { FileAttachment } from '../types';
-import { arrayBufferToBase64 } from '../utils';
+import { arrayBufferToBase64 } from './fileTransfer';
 import { sanitizeFileBase } from './attachmentNames';
 
 export type TextFormatId = 'abc' | 'txt' | 'md';

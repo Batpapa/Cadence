@@ -2,7 +2,8 @@ import { Fragment, type ComponentChild } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import type { AppContext } from '../../types';
-import { formatBytes, downloadBlob } from '../../utils';
+import { formatBytes } from '../../utils';
+import { downloadBlob } from '../../services/fileTransfer';
 import { PlusIcon, CloudIcon, CloudUpIcon, TrashIcon, ResetIcon, UploadIcon, PlayIcon, PauseIcon, StopIcon } from '../../components/icons';
 import { downloadIcon } from '../../components/playbackIcons';
 import { IconButton, TARGET_RING } from '../../components/ui';
@@ -30,10 +31,9 @@ import { showShareSessionModal } from './ShareSessionModal';
 import { showAnalysisNotesModal } from './AnalysisNotesModal';
 import { detectAudioFile } from '../audio/clipExtract';
 import { audioExtension } from '../../services/zip';
-import {
-  fmtLongTime, TitleRow, DateRow,
-  ClipControls, recutAttachedClip, repinReviewEntry, absorbReviewEntry, dropReviewEntry, repinSessionDate,
-} from './sessionUiShared';
+import { fmtLongTime, TitleRow, DateRow } from './sessionUiShared';
+import { ClipControls, recutAttachedClip } from './clips';
+import { repinReviewEntry, absorbReviewEntry, dropReviewEntry, repinSessionDate } from './reviewRetarget';
 import { AnalysisNav } from './AnalysisNav';
 import { AnalysisFolderPicker } from './AnalysisFolderPicker';
 import { showBoundEditor, type TwinEdit } from './BoundEditor';

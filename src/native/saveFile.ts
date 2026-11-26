@@ -1,6 +1,6 @@
 import { registerPlugin } from '@capacitor/core';
 import { Directory, Filesystem } from '@capacitor/filesystem';
-import { arrayBufferToBase64 } from '../utils';
+import { arrayBufferToBase64 } from '../services/fileTransfer';
 
 /**
  * The Android app's "download": a WebView ignores `<a download>` on a blob:

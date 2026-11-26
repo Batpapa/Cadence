@@ -1,7 +1,7 @@
 import { signal } from '@preact/signals';
 import type { EmbedEntry, FileAttachment } from '../types';
 import { fetchRemoteFile, remoteDisplayName } from './remoteFile';
-import { arrayBufferToBase64 } from '../utils';
+import { arrayBufferToBase64 } from './fileTransfer';
 
 // ── A score that is a link ───────────────────────────────────────────────────
 // A link to an `.abc` file is a card's score like an attached one
