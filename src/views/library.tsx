@@ -28,6 +28,7 @@ import { useContextMenu } from '../components/contextMenu';
 import { showStudyModal } from '../components/studyModal';
 import { showNewCardModal } from '../components/theSessionImport';
 import { deckIdsByCard, addCardsToDecks } from '../services/deckService';
+import { userKey } from '../userLocalKeys';
 import { knownChips } from '../components/filterChips';
 import { coveredByTagGroups, dropTagNodeChips, renameTagNodeChips, tagChipValues, tagDisplay, tagLabel, tagNodeExists, tagTree } from '../services/tagGroups';
 import { deckChipKnown, deckChipSection } from '../components/deckChips';
@@ -288,13 +289,11 @@ const SORT_ICON: Record<LibrarySort, ComponentType<{ size?: number }>> = {
  *  route that carries its own sort (the back button, or the route restored at
  *  boot), which would silently overwrite the remembered default with wherever
  *  the user happened to navigate back to. */
-const SORT_PREF_KEY = 'cadence_library_sort';
-
 type SortPref = { sort: LibrarySort; asc: boolean };
 
 function loadSortPref(userId: string): SortPref | null {
   try {
-    const raw = localStorage.getItem(`${SORT_PREF_KEY}:${userId}`);
+    const raw = localStorage.getItem(userKey('librarySort', userId));
     if (!raw) return null;
     const pref = JSON.parse(raw) as SortPref;
     // A stored mode may have been renamed or dropped since it was written.
@@ -306,7 +305,7 @@ function loadSortPref(userId: string): SortPref | null {
 
 function saveSortPref(userId: string, sort: LibrarySort, asc: boolean): void {
   try {
-    localStorage.setItem(`${SORT_PREF_KEY}:${userId}`, JSON.stringify({ sort, asc }));
+    localStorage.setItem(userKey('librarySort', userId), JSON.stringify({ sort, asc }));
   } catch {
     // Private mode, quota exhausted — losing a UI preference must never break sorting.
   }

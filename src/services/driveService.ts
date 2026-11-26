@@ -2,6 +2,7 @@ import type { AppState } from '../types';
 import { GOOGLE_CLIENT_ID } from '../config';
 import { withTimeout } from '../utils';
 import { getAllUserIds } from '../db';
+import { userKey, userKeyPrefix, forgetUserKeys } from '../userLocalKeys';
 import { isNative } from '../native/platform';
 import { decideReconcile } from './reconcilePolicy';
 
@@ -91,23 +92,24 @@ let _state: DriveUserState = {
 };
 
 // Key helpers — accept an explicit userId for cross-user operations (e.g. clear on delete).
-const lsFileId    = (uid = _state.userId) => `cadence_drive_file_id_${uid}`;
-const lsConnected = (uid = _state.userId) => `cadence_drive_connected_${uid}`;
-const lsLocalTs   = (uid = _state.userId) => `cadence_local_modified_${uid}`;
-const lsSyncedTs  = (uid = _state.userId) => `cadence_drive_synced_ts_${uid}`;
-const lsHint      = (uid = _state.userId) => `cadence_drive_hint_${uid}`;
-const lsOwner     = (uid = _state.userId) => `cadence_drive_owner_${uid}`;
-const lsFailed    = (uid = _state.userId) => `cadence_drive_sync_failed_${uid}`;
+// The names themselves live in userLocalKeys.ts, with every other per-user key.
+const lsFileId    = (uid = _state.userId) => userKey('driveFileId', uid);
+const lsConnected = (uid = _state.userId) => userKey('driveConnected', uid);
+const lsLocalTs   = (uid = _state.userId) => userKey('driveLocalTs', uid);
+const lsSyncedTs  = (uid = _state.userId) => userKey('driveSyncedTs', uid);
+const lsHint      = (uid = _state.userId) => userKey('driveHint', uid);
+const lsOwner     = (uid = _state.userId) => userKey('driveOwner', uid);
+const lsFailed    = (uid = _state.userId) => userKey('driveFailed', uid);
 // ── 2026-08-31 redesign (see reconcilePolicy.ts for the trust model) ──
 /** Drive's server-side file `version` at the last sync point — the exact,
  *  clock-free answer to "has Drive moved since we last agreed?". */
-const lsSyncedVersion = (uid = _state.userId) => `cadence_drive_synced_version_${uid}`;
+const lsSyncedVersion = (uid = _state.userId) => userKey('driveSyncedVersion', uid);
 /** Local edit counter and its value at the last sync point — the exact,
  *  clock-free answer to "has local moved since we last agreed?". */
-const lsEditSeq   = (uid = _state.userId) => `cadence_edit_seq_${uid}`;
-const lsSyncedSeq = (uid = _state.userId) => `cadence_synced_seq_${uid}`;
+const lsEditSeq   = (uid = _state.userId) => userKey('driveEditSeq', uid);
+const lsSyncedSeq = (uid = _state.userId) => userKey('driveSyncedSeq', uid);
 /** The upload sent and not yet acknowledged — see recogniseOwnLandedWrite. */
-const lsInflight  = (uid = _state.userId) => `cadence_drive_inflight_${uid}`;
+const lsInflight  = (uid = _state.userId) => userKey('driveInflight', uid);
 
 function getSyncedVersion(): string | null { return localStorage.getItem(lsSyncedVersion()); }
 function getEditSeq(uid = _state.userId): number { return parseInt(localStorage.getItem(lsEditSeq(uid)) ?? '0'); }
@@ -337,18 +339,11 @@ export function clearDriveOwner(): void {
   localStorage.removeItem(lsOwner());
 }
 
+/** Every Drive key of `userId` — the 'drive' group of userLocalKeys.ts, so a
+ *  key added there is cleared here too (the folder id was not, until
+ *  2026-11-26). */
 export function clearDriveStateForUser(userId: string): void {
-  localStorage.removeItem(lsFileId(userId));
-  localStorage.removeItem(lsConnected(userId));
-  localStorage.removeItem(lsLocalTs(userId));
-  localStorage.removeItem(lsSyncedTs(userId));
-  localStorage.removeItem(lsHint(userId));
-  localStorage.removeItem(lsOwner(userId));
-  localStorage.removeItem(lsFailed(userId));
-  localStorage.removeItem(lsSyncedVersion(userId));
-  localStorage.removeItem(lsEditSeq(userId));
-  localStorage.removeItem(lsSyncedSeq(userId));
-  localStorage.removeItem(lsInflight(userId));
+  forgetUserKeys(userId, 'drive');
 }
 
 export function getDeviceId(): string {
@@ -434,8 +429,15 @@ export function resumePendingSync(state: AppState): void {
   _state.firstPendingAt ??= Date.now();
   setStatus(localStorage.getItem(lsFailed()) === '1' ? 'error' : 'pending');
   if (_state.syncTimer) clearTimeout(_state.syncTimer);
-  _state.syncTimer = setTimeout(() => { _state.syncTimer = null; void flushSync(autoMayPrompt()); }, 5_000);
+  _state.syncTimer = setTimeout(() => { _state.syncTimer = null; void flushSync(autoMayPrompt()); }, RESUME_FLUSH_MS);
 }
+
+/** How long resumePendingSync waits before pushing. Not a wait for boot: it is
+ *  called once the boot reconciliation has decided. A short window, chosen
+ *  rather than measured (2026-08-26), in which the changes boot makes by itself
+ *  — the analyses brought in from the standalone page, say — go out in the
+ *  same push. */
+const RESUME_FLUSH_MS = 5_000;
 
 /** Three-way reconciliation between local state and a Drive read. The whole
  *  decision table lives in reconcilePolicy.ts (pure, exhaustively unit-tested);
@@ -854,7 +856,7 @@ export async function connectDrive(allowSharedAccount = false): Promise<ConnectR
     // ghost — Settings raised this warning, and the welcome screen's recovery
     // tried to open it, found nothing, and sat on « Connexion… » for good.
     if (!allowSharedAccount && googleId) {
-      const ownerPrefix = 'cadence_drive_owner_';
+      const ownerPrefix = userKeyPrefix('driveOwner');
       let liveUsers: Set<string> | null = null;
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i)!;
@@ -1299,7 +1301,7 @@ export async function readDriveFile(interactive = false): Promise<DriveFileRead>
  *  Named alongside `cadence-data.json` — the blob and its external companions,
  *  recognisable as a pair when someone finds them in their Drive. */
 const COMPANION_FOLDER_NAME = 'cadence-data-ext';
-const lsFolderId = (uid = _state.userId) => `cadence_drive_folder_id_${uid}`;
+const lsFolderId = (uid = _state.userId) => userKey('driveFolderId', uid);
 
 /** Thrown when a companion operation is asked for without a usable Drive
  *  connection. Distinct from a failed upload: nothing was attempted, and the

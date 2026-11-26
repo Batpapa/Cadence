@@ -24,14 +24,15 @@ import {
 } from '../services/attachmentStore';
 import { askIncompleteExport } from './incompleteExportModal';
 import { findDriveOrphans, trashDriveOrphans, driveStorageUsage, OrphanScanUnavailable, type DriveOrphan } from '../services/driveOrphans';
-import { listSnapshots, getSnapshotState, clearSnapshotsForUser, deleteSnapshot, type SnapshotMeta } from '../services/snapshotService';
+import { listSnapshots, getSnapshotState, deleteSnapshot, type SnapshotMeta } from '../services/snapshotService';
 import { t, setLanguage } from '../services/i18nService';
-import { initDriveClient, isDriveFeatureEnabled, isDriveConnected, getDriveStatus, onStatusChange, connectDrive, disconnectDrive, clearDriveOwner, clearDriveStateForUser, syncToCloud, manualSync, isLikelyInAppBrowser, type DriveStatus } from '../services/driveService';
+import { initDriveClient, isDriveFeatureEnabled, isDriveConnected, getDriveStatus, onStatusChange, connectDrive, disconnectDrive, clearDriveOwner, syncToCloud, manualSync, isLikelyInAppBrowser, type DriveStatus } from '../services/driveService';
 import { applyDriveState, showDriveConflictModal } from './driveConflictModal';
 import type { Lang } from '../services/i18nService';
 import { appState, getContext } from '../store';
 import { CustomSelect } from './customSelect';
-import { clearLastUserId, deleteUser, removeUserFromOrder } from '../db';
+import { clearLastUserId } from '../db';
+import { removeUserData } from '../services/userRemoval';
 import { defaultTuneRepeat, MAX_REPEAT, addTunesetAbcOnConvert } from '../services/abcService';
 import { setsMatchTuneTags } from '../services/cardRefService';
 import { EXTENSIONS, extensionEnabled, extensionOption } from '../services/extensions';
@@ -599,16 +600,8 @@ async function runReset(): Promise<void> {
   ctx.navigate({ view: 'folder', folderId: null });
 }
 
-/** Removes the whole local copy of a user: their state blob, their recordings,
- *  their safety-net snapshots and the Drive bookkeeping that points at them.
- *
- *  `deleteLocalSessionData` is what this was missing until 2026-09-08:
- *  `deleteUser` only drops the AppState blob, so every past recording's audio,
- *  the interrupted drafts and their chunks stayed behind in
- *  `cadence-tune-analyser-local-user-{id}` — a database no screen can reach any
- *  more once its owner is gone, quietly holding the largest thing this app
- *  stores. Ordered before `deleteUser` so a failure here leaves the user present
- *  and the data reachable, rather than the reverse.
+/** Removes the whole local copy of a user (removeUserData, userRemoval.ts),
+ *  then reloads.
  *
  *  Reloads instead of returning to the selector in-page, which is what the
  *  welcome screen used to do: here the user being erased is the one this tab has
@@ -617,13 +610,7 @@ async function runReset(): Promise<void> {
  *  writes the blob back after it has been deleted. */
 async function removeUserFromDevice(userId: string): Promise<void> {
   closeAllModals(); closeSettingsModal?.();
-  clearDriveStateForUser(userId);
-  await clearSnapshotsForUser(userId);
-  await deleteLocalSessionData(userId);
-  await deleteLocalAttachmentData(userId);
-  removeUserFromOrder(userId);
-  await deleteUser(userId);
-  clearLastUserId();
+  await removeUserData(userId);
   location.reload();
 }
 

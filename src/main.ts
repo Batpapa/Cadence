@@ -1,6 +1,7 @@
 import './styles.css';
 import 'abcjs/abcjs-audio.css';
 import { initDb, dumpRawDatabase, loadUser, saveUser, getAllUserIds, loadAllUsers, getLastUserId, setLastUserId, touchUserOrder } from './db';
+import { markBootSettled } from './bootSettled';
 import { emptyState, formatBytes, downloadCadenceFile, downloadBlob, isTouchPrimaryDevice, isAppleTouchDevice } from './utils';
 import { appState, commitState, applyFromDrive, routeSignal, loadSavedRoute, initRoutePersistence } from './store';
 import { ensureCurrentUser, ensureCurrentProfile, welcomeLanguage } from './services/userService';
@@ -352,7 +353,9 @@ async function showRecoveryScreen(root: HTMLElement, err?: unknown): Promise<voi
       </div>
     </div>`;
 
-  // The screen is plain markup: a language picked here redraws all of it.
+  // The screen is plain markup: a language picked here redraws all of it —
+  // after the picker's own handler has returned, since the redraw replaces the
+  // Preact tree that handler runs in.
   render(h(WelcomePrefs, { onLanguageChange: () => { setTimeout(() => { void showRecoveryScreen(root, err); }, 0); } }),
     document.getElementById('recovery-prefs')!);
 
@@ -777,8 +780,14 @@ function finishBoot(root: HTMLElement): void {
         // is what turns "behind" into a divergence to arbitrate.
         markReconcileFailed();
         resumePendingSync(appState.value);
+      } finally {
+        // Whichever way it went: what waits for boot's work with Drive may go.
+        markBootSettled();
       }
     })();
+  } else {
+    // No Drive to read: boot's work with it is already done.
+    markBootSettled();
   }
 
   mountApp(root);

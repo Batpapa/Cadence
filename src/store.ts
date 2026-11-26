@@ -2,6 +2,7 @@ import { signal, effect } from '@preact/signals';
 import type { AppState, AppContext, Route } from './types';
 import { emptyState } from './utils';
 import { saveUser } from './db';
+import { userKey } from './userLocalKeys';
 import { syncToCloud } from './services/driveService';
 import { saveFailure, reportSaveFailure, reportSaveRecovered } from './services/saveHealth';
 import { normaliseState } from './services/stateNormalise';
@@ -22,7 +23,6 @@ export const stateEpoch  = signal(0);
 export const canGoBack   = signal(false);
 export const canGoForward = signal(false);
 
-const ROUTE_STORAGE_KEY = 'cadence_last_route';
 
 function isValidRoute(route: Route, user: AppState): boolean {
   switch (route.view) {
@@ -47,7 +47,7 @@ function isValidRoute(route: Route, user: AppState): boolean {
 /** Reads the last route saved for this user, validated against their current data. */
 export function loadSavedRoute(user: AppState): Route | null {
   try {
-    const raw = localStorage.getItem(`${ROUTE_STORAGE_KEY}:${user.id}`);
+    const raw = localStorage.getItem(userKey('lastRoute', user.id));
     if (!raw) return null;
     const route = JSON.parse(raw) as Route;
     if (isValidRoute(route, user)) return route;
@@ -68,7 +68,7 @@ export function loadSavedRoute(user: AppState): Route | null {
 export function initRoutePersistence(userId: string): void {
   initHistory(userId);
   effect(() => {
-    localStorage.setItem(`${ROUTE_STORAGE_KEY}:${userId}`, JSON.stringify(routeSignal.value));
+    localStorage.setItem(userKey('lastRoute', userId), JSON.stringify(routeSignal.value));
   });
 }
 

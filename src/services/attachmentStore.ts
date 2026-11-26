@@ -5,6 +5,7 @@ import {
   condemnDriveFile, condemnedFiles, forgetCondemned,
 } from './attachmentDb';
 import { isQuotaError } from './saveHealth';
+import { bootSettled } from '../bootSettled';
 
 // ── Resolving an attachment's bytes ──────────────────────────────────────────
 // One module owns two questions, and nothing else may answer them by hand:
@@ -1093,8 +1094,10 @@ let _wired = false;
  *
  *  Three jobs, none of them interactive: resume uploads when a token comes
  *  back, delete what was condemned while offline, and drop local bytes nothing
- *  points at any more. The sweep is deferred — it reads every snapshot, and
- *  boot is not the moment to do that. */
+ *  points at any more. The sweep waits for boot's work with Drive
+ *  (bootSettled.ts): it reads every snapshot, which is not for the moment boot
+ *  is busy, and what is "pointed at" is only known once a newer copy from
+ *  Drive has been applied or not. */
 export function initAttachmentSync(): void {
   _pendingHint = true;   // until a pass proves otherwise
   if (!_wired) {
@@ -1115,7 +1118,7 @@ export function initAttachmentSync(): void {
       document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') resume(); });
     });
   }
-  setTimeout(() => { void expireSnapshotsThenCollect(true); }, 8000);
+  void bootSettled.then(() => expireSnapshotsThenCollect(true));
   // Not only at boot: a tab or an installed app can stay open for weeks, and
   // a snapshot must be gone a month after it was taken, not a month after the
   // last launch. Hourly is plenty for a thirty-day limit, and costs one key

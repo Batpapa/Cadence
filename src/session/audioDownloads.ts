@@ -4,6 +4,7 @@ import { isDriveConnected, registerDrivePendingWork } from '../services/driveSer
 import { refreshStorageEstimate, storageQuota, storageUsage, FULL_RATIO } from '../services/storageService';
 import { driveOnlyAudio, fetchSyncedAudio, freedAudioIds, sessionDbUserId } from './db';
 import { analyserModuleOf } from './model';
+import { userKey } from '../userLocalKeys';
 import { onUnmeteredNetwork, onNetworkChange } from './network';
 
 // ── Bringing the recordings onto this device (2026-10-09) ────────────────────
@@ -31,41 +32,41 @@ import { onUnmeteredNetwork, onNetworkChange } from './network';
 
 export type AudioDownloadMode = 'manual' | 'auto';
 
-const LS_MODE = 'cadence_audio_download_mode';
-const LS_WIFI_ONLY = 'cadence_audio_download_wifi_only';
 
 /** This device's choice for the user who is open. */
 export const audioDownloadMode = signal<AudioDownloadMode>('manual');
 /** Automatic only: false once the user allowed mobile data too. */
 export const downloadOnWifiOnly = signal(true);
 
-function key(prefix: string): string | null {
+type SettingKey = 'audioDownloadMode' | 'audioDownloadWifiOnly';
+
+function key(name: SettingKey): string | null {
   const uid = sessionDbUserId();
-  return uid ? `${prefix}:${uid}` : null;
+  return uid ? userKey(name, uid) : null;
 }
 
 function readSettings(): void {
-  const mode = (() => { try { return localStorage.getItem(key(LS_MODE) ?? ''); } catch { return null; } })();
+  const mode = (() => { try { return localStorage.getItem(key('audioDownloadMode') ?? ''); } catch { return null; } })();
   audioDownloadMode.value = mode === 'auto' ? mode : 'manual';
-  const wifi = (() => { try { return localStorage.getItem(key(LS_WIFI_ONLY) ?? ''); } catch { return null; } })();
+  const wifi = (() => { try { return localStorage.getItem(key('audioDownloadWifiOnly') ?? ''); } catch { return null; } })();
   downloadOnWifiOnly.value = wifi !== '0';
 }
 
-function write(prefix: string, value: string): void {
-  const k = key(prefix);
+function write(name: SettingKey, value: string): void {
+  const k = key(name);
   if (!k) return;
   try { localStorage.setItem(k, value); } catch { /* kept for this page's life */ }
 }
 
 export function setAudioDownloadMode(mode: AudioDownloadMode): void {
   audioDownloadMode.value = mode;
-  write(LS_MODE, mode);
+  write('audioDownloadMode', mode);
   void runAutoDownloads();
 }
 
 export function setDownloadOnWifiOnly(wifiOnly: boolean): void {
   downloadOnWifiOnly.value = wifiOnly;
-  write(LS_WIFI_ONLY, wifiOnly ? '1' : '0');
+  write('audioDownloadWifiOnly', wifiOnly ? '1' : '0');
   void runAutoDownloads();
 }
 

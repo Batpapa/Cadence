@@ -9,6 +9,8 @@ import { compareByDateThenName, editSessionTree, forgetSession } from './session
 import { strippedReviewIds } from '../services/reviewEntries';
 import { isAnalysisReviewId } from './reviewLink';
 import { onNetworkChange, onUnmeteredNetwork } from './network';
+import { userKey } from '../userLocalKeys';
+import { bootSettled } from '../bootSettled';
 
 // store.ts is imported lazily (dynamic import, below) rather than statically:
 // it transitively pulls in services/driveService.ts, which reads
@@ -770,19 +772,17 @@ export async function saveSessionAudio(sessionId: string, audio: Blob, sync?: bo
 // there, the default is to send on any network — that copy is what keeps a
 // recording safe, and it always went out at once before this choice existed.
 
-const LS_UPLOAD_WIFI_ONLY = 'cadence_audio_upload_wifi_only';
-
 export const uploadOnWifiOnly = signal(false);
 
 function readUploadWifiOnly(): void {
-  try { uploadOnWifiOnly.value = !!_userId && localStorage.getItem(`${LS_UPLOAD_WIFI_ONLY}:${_userId}`) === '1'; }
+  try { uploadOnWifiOnly.value = !!_userId && localStorage.getItem(userKey('audioUploadWifiOnly', _userId)) === '1'; }
   catch { uploadOnWifiOnly.value = false; }
 }
 
 export function setUploadOnWifiOnly(wifiOnly: boolean): void {
   uploadOnWifiOnly.value = wifiOnly;
   if (_userId) {
-    try { localStorage.setItem(`${LS_UPLOAD_WIFI_ONLY}:${_userId}`, wifiOnly ? '1' : '0'); } catch { /* this page's life */ }
+    try { localStorage.setItem(userKey('audioUploadWifiOnly', _userId), wifiOnly ? '1' : '0'); } catch { /* this page's life */ }
   }
   publishUploadState();
   void retryWantedUploads();
@@ -811,8 +811,8 @@ function uploadHeldForWifi(): boolean {
  *  localStorage — never in the synced state, since what one device has sent or
  *  freed says nothing about another. Per user: one device can hold several,
  *  each with its own Drive. */
-function deviceIdList(prefix: string) {
-  const key = () => (_userId ? `${prefix}:${_userId}` : null);
+function deviceIdList(name: 'audioUploadsWanted' | 'audioFreed') {
+  const key = () => (_userId ? userKey(name, _userId) : null);
   const read = (): string[] => {
     const k = key();
     if (!k) return [];
@@ -834,7 +834,7 @@ function deviceIdList(prefix: string) {
   return { read, set };
 }
 
-const uploadsWanted = deviceIdList('cadence_audio_uploads_wanted');
+const uploadsWanted = deviceIdList('audioUploadsWanted');
 const readWanted = uploadsWanted.read;
 
 /** Where each recording's automatic upload stands, for the summary's cloud
@@ -921,13 +921,14 @@ async function retryWantedUploads(): Promise<void> {
 let _retryWired = false;
 const FOREGROUND_RETRY_EVERY_MS = 10 * 60_000;
 
-/** Called once a user is open (main.ts's finishBoot). The launch pass waits a
- *  little: boot is busy reading Drive, which is also what fetches a token in
- *  the browser. */
+/** Called once a user is open (main.ts's finishBoot). The launch pass waits
+ *  for boot's work with Drive (bootSettled.ts): reading Drive is also what
+ *  fetches a token in the browser, and a copy of Drive applied meanwhile may
+ *  name recordings this one does not. */
 export function initAudioUploadRetry(): void {
   readUploadWifiOnly();
   publishUploadState();
-  setTimeout(() => { void retryWantedUploads(); }, 8000);
+  void bootSettled.then(() => retryWantedUploads());
   if (_retryWired) return;
   _retryWired = true;
   const retry = () => { void retryWantedUploads(); };
@@ -1271,7 +1272,7 @@ async function runDownload(sessionId: string, interactive: boolean): Promise<Blo
  *  the summary's "forget the audio", or the settings' "free up space". The
  *  automatic download leaves them on Drive — which is what makes "only bring
  *  the next sessions here" possible. An explicit request ignores it. */
-const audioFreed = deviceIdList('cadence_audio_freed');
+const audioFreed = deviceIdList('audioFreed');
 
 export function freedAudioIds(): ReadonlySet<string> {
   return new Set(audioFreed.read());
