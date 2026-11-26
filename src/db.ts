@@ -6,7 +6,9 @@ const DB_NAME    = 'cadence';
 const DB_VERSION = 3;
 const USER_STORE   = 'user';
 /** The single-blob store of before 2026-06-01. Its migration went on
- *  2026-11-26; the upgrade below still drops the store where it lingers. */
+ *  2026-11-26: every user from before then is known and long migrated. The
+ *  upgrade below drops it on a database met at v2; one still at v1 would keep
+ *  it, unread — no such device exists. */
 const LEGACY_STORE = 'state';
 const LS_LAST_USER  = 'cadence_last_user_id';
 const LS_USER_ORDER = 'cadence_user_order';

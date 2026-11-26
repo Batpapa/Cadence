@@ -292,8 +292,8 @@ export async function openUser(id: string, root: HTMLElement): Promise<void> {
     await initDb();
 
     // The single-blob store of before 2026-06-01 is no longer moved into the
-    // per-user one: that migration went on 2026-11-26 (the six-month rule for
-    // old formats, legacyDeadlines.test.ts).
+    // per-user one: that migration went on 2026-11-26, every user from before
+    // then being known and long migrated (db.ts's LEGACY_STORE).
 
     // ── Normal boot ───────────────────────────────────────────────────────────
     const lastId  = getLastUserId();

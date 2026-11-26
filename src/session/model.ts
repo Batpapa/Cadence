@@ -428,14 +428,12 @@ export function analyserModuleOf(user: WithModules): TuneAnalyserModuleData | un
 }
 
 /** Edits the analyser's slice of `user` — a draft inside mutate() — creating
- *  it as `{ sessions: {} }` when absent, and attaching it back. What `fn`
- *  returns is handed on. */
-export function editAnalyserModule<T>(user: WithModules, fn: (mod: TuneAnalyserModuleData) => T): T {
+ *  it as `{ sessions: {} }` when absent, and attaching it back. */
+export function editAnalyserModule(user: WithModules, fn: (mod: TuneAnalyserModuleData) => void): void {
   user.modules ??= {};
   const mod = analyserModuleOf(user) ?? { sessions: {} };
-  const out = fn(mod);
+  fn(mod);
   user.modules[TUNE_ANALYSER_MODULE_KEY] = mod;
-  return out;
 }
 
 // ── Recognition window results (worker → Viterbi detector) ─────────────────────

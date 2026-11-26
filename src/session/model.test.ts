@@ -29,8 +29,4 @@ describe('editAnalyserModule', () => {
     expect(mod).toEqual({ sessions: {}, syncAudioByDefault: false });
     expect(user.modules.trending).toBe(other);
   });
-
-  it('hands on what the edit returns', () => {
-    expect(editAnalyserModule({}, m => Object.keys(m.sessions).length)).toBe(0);
-  });
 });

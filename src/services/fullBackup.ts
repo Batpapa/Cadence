@@ -194,8 +194,10 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 function isValidBackup(data: unknown): data is Record<string, unknown> {
   if (!isRecord(data)) return false;
   // Cards and profiles directly (id may be absent — stripped on export). The
-  // multi-user AppState of before 2026-06-01 is no longer accepted (gone
-  // 2026-11-26, the six-month rule): such a file is "not a backup" now.
+  // multi-user AppState of before 2026-06-01 is no longer converted (gone
+  // 2026-11-26, its users known and long migrated): one from before profiles
+  // is "not a backup" here, a later one is refused by its version
+  // (migration.ts's OLDEST_SCHEMA).
   return isRecord(data['cards']) && isRecord(data['profiles']);
 }
 

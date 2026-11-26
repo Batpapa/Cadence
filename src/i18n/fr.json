@@ -670,7 +670,6 @@
   "settings.export.failed.title": "Export impossible",
   "settings.export.tooBig": "Cette sauvegarde ferait {size}, au-delà des {max} qu'un fichier de sauvegarde peut contenir. Libérez de la place en supprimant l'audio d'anciennes analyses, ou exportez les données seules.",
   "settings.import.failed.title": "Import impossible",
-  "migration.multiUser": "Ces données viennent d'une version de Cadence trop ancienne pour être encore lue (avant juin 2026). Rien n'a été modifié.",
   "migration.tooOld": "Ces données viennent d'une version de Cadence trop ancienne pour être encore lue (format {from} ; le plus ancien encore lu est le {oldest}). Rien n'a été modifié.",
   "settings.import.messageFull": "Cela remplacera toutes les données actuelles, enregistrements compris, par le contenu de la sauvegarde. Confirmer ?",
   "settings.username": "Nom d'utilisateur",

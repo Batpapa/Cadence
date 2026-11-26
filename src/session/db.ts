@@ -89,8 +89,9 @@ function driveModule(): Promise<typeof import('../services/driveService')> {
 // wait for the fleet, ship "read both, write new", then months later drop the
 // old read. Three deploys during which the code carries BOTH names — less
 // legible than the single frozen name it was meant to improve. (The project
-// paid that toll once, with decideReconcile's transitional branch, carried
-// from 2026-08-31 to 2026-11-26.) A cosmetic gain does not buy that.
+// paid that toll once, with decideReconcile's clock comparisons for installs
+// from before the redesign, carried from 2026-08-31 to 2026-11-26.) A cosmetic
+// gain does not buy that.
 //
 // So: the boundary is the disk. Above it the code says analysis/detection;
 // at it and below, the keys say what they have always said. Do not "finish

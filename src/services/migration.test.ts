@@ -29,7 +29,7 @@ describe('the oldest version still read', () => {
     expect(JSON.stringify(s)).toBe(before);
   });
 
-  it('refuses the multi-user AppState of before 2026-06-01 even at v4, rather than read it as one user', () => {
+  it('refuses the multi-user AppState of before 2026-06-01 by its version (it stopped at v4), rather than read it as one user', () => {
     const raw = { schemaVersion: 4, users: { u1: { language: 'fr' } }, currentUserId: 'u1', profiles: {}, cards: {} };
     const before = JSON.stringify(raw);
     expect(() => applyExternalData(raw, 'me')).toThrow();
@@ -187,7 +187,7 @@ describe('migrateState V8 → V9', () => {
       id: 'a', externalId: 'thesession:1',
       content: { notes: '', attachments: [{ type: 'file', name: 'rec.webm', mimeType: '', data: AUDIO_WEBM }] },
     }));
-    s.schemaVersion = 5;
+    s.schemaVersion = OLDEST_SCHEMA;
     migrateState(s);
     expect(s.cards['a']!.type).toBe('tune');
     expect(s.cards['a']!.content.attachments[0]).toMatchObject({ mimeType: 'audio/webm' });

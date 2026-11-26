@@ -20,3 +20,14 @@ export const bootSettled: Promise<void> = new Promise(resolve => { settle = reso
 export function markBootSettled(): void {
   settle();
 }
+
+/** Once boot has settled AND the page has a quiet moment — for heavy work that
+ *  can wait, which without Drive would otherwise start the moment the app is
+ *  mounted: requestIdleCallback where the browser has it (its timeout only a
+ *  ceiling, for a page that is never idle), the next task where it does not. */
+export function afterBootIdle(): Promise<void> {
+  return bootSettled.then(() => new Promise<void>(resolve => {
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(() => resolve(), { timeout: 10_000 });
+    else setTimeout(resolve, 0);
+  }));
+}

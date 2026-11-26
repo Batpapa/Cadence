@@ -1,5 +1,4 @@
 import type { AppState, Card, User } from '../types';
-import { generateId } from '../utils';
 import { ensureCurrentUser, ensureCurrentProfile } from './userService';
 import { migrateClipTags } from './attachmentNames';
 import { migrateAudioMimeTypes } from './audioSniff';
@@ -10,8 +9,12 @@ import { groupImportTags } from './tagGroups';
 export const SCHEMA_VERSION = 10;
 
 /** The oldest version still migrated. V0 → V1 (a no-op), V1 → V2 (files/embeds
- *  into attachments, 2026-04-20), V2 → V3 (profiles, 2026-04-20) and V3 → V4
- *  (TheSession tag casing, 2026-05-14) went on 2026-11-26.
+ *  into attachments, 2026-04-20), V2 → V3 (profiles, 2026-04-20), V3 → V4
+ *  (TheSession tag casing, 2026-05-14), V4 → V5 (card guids, 2026-06-12) and
+ *  V5 → V6 (importance renamed, 2026-07-02) went on 2026-11-26 — not by the
+ *  rule below, which would have kept them, but because Cadence had two users
+ *  before July 2026, both known and long past them. The multi-user AppState of
+ *  before 2026-06-01 stopped at v4, so it is refused by its version too.
  *
  *  The steps left STAY, with no deadline (the user's rule, 2026-11-26): they
  *  convert data that sleeps for as long as it likes — a device put away, a
@@ -21,16 +24,18 @@ export const SCHEMA_VERSION = 10;
  *  app (legacyDeadlines.test.ts).
  *
  *  A state below it is REFUSED, never read: run through the later steps as if
- *  it were current it would come out corrupted, its attachments still under
- *  `files`/`embeds`, its reviews keyed by user rather than profile. Every
- *  caller turns the refusal into "nothing applied" — an import says why, a
- *  Drive copy is not applied, a boot falls to the recovery screen — and the
- *  data stays as it was.
+ *  it were current it would come out corrupted — cards with no guid, an
+ *  importance under its old name, and older still, attachments under
+ *  `files`/`embeds` and reviews keyed by user rather than profile. The
+ *  refusal throws before anything is written, so the data stays as it was; an
+ *  import says why, a boot falls to the recovery screen. The welcome screen's
+ *  Drive recovery and the conflict modal's "use Drive" do not catch it — no
+ *  such data exists to reach them (see above).
  *
  *  importExport.ts's `migrateRawCards` keeps its own copies of the card steps:
  *  a .cdc written by hand or by an AI carries no version at all and is read as
  *  v0, a format kept for good. */
-export const OLDEST_SCHEMA = 4;
+export const OLDEST_SCHEMA = 6;
 
 /** V6 → V7's rule, shared with importExport.ts's `migrateRawCards` so a card
  *  arriving through a .cdc package is stamped exactly like one already in the
@@ -65,34 +70,6 @@ export function settleImportTags(card: Record<string, unknown>): void {
 // to SCHEMA_VERSION - 1, none missing (migration.test.ts checks it).
 // `Record<string, unknown>` handles partially-typed legacy shapes.
 const migrations: Record<number, (s: Record<string, unknown>) => void> = {
-  // V4 → V5: assign a stable guid to every card (used for cross-device references).
-  4: (s) => {
-    const cards = s['cards'] as Record<string, Record<string, unknown>>;
-    for (const card of Object.values(cards ?? {})) {
-      if (!card['guid']) card['guid'] = generateId();
-    }
-  },
-  // V5 → V6: rename card.importance → card.defaultImportance, entry.importanceOverride → entry.importance.
-  5: (s) => {
-    const cards = s['cards'] as Record<string, Record<string, unknown>>;
-    for (const card of Object.values(cards ?? {})) {
-      if ('importance' in card && !('defaultImportance' in card)) {
-        card['defaultImportance'] = card['importance'];
-        delete card['importance'];
-      }
-    }
-    const decks = s['decks'] as Record<string, Record<string, unknown>>;
-    for (const deck of Object.values(decks ?? {})) {
-      const entries = deck['entries'] as Array<Record<string, unknown>>;
-      if (!Array.isArray(entries)) continue;
-      for (const entry of entries) {
-        if ('importanceOverride' in entry) {
-          entry['importance'] = entry['importanceOverride'];
-          delete entry['importanceOverride'];
-        }
-      }
-    }
-  },
   // V6 → V7: stamp `type: 'tune'` on cards imported from a tune source, so a
   //          library built before card types existed can populate a tuneset.
   //          Writes one optional field; moves and deletes nothing.
@@ -171,11 +148,8 @@ export function migrateState(user: AppState): void {
  * Always preserves the current user's id.
  */
 export function applyExternalData(raw: Record<string, unknown>, currentId: string): User {
-  // The multi-user AppState of before 2026-06-01 ({users, currentUserId}) is no
-  // longer converted (gone 2026-11-26). Refused like any state too old — but by
-  // its shape, since it stopped at v4, above the floor: read as a single user
-  // it would come out half right, its settings lost.
-  if ('users' in raw && 'currentUserId' in raw) throw new Error(t('migration.multiUser'));
+  // A state too old is refused here (migrateState, OLDEST_SCHEMA) — the
+  // multi-user AppState of before 2026-06-01 included, which stopped at v4.
   migrateState(raw as unknown as AppState);
   const user = raw as unknown as User;
   const result = { ...user, id: currentId };
