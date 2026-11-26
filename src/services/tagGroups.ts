@@ -220,7 +220,8 @@ export function keyTag(key: string): string {
  *  import's — and only values in the importers' exact formats, so nothing is
  *  guessed. Idempotent; run on every normalisation, since an older build still
  *  writes the flat tags when it imports or refreshes. Returns whether the card
- *  changed. */
+ *  changed.
+ *  LEGACY until 2027-05-09 — flat type/key tags on imported cards, not written since 2026-11-09 (9a3c56a): this and its call in stateNormalise.ts. */
 export function groupImportTags(card: Card): boolean {
   const id = card.externalId;
   if (!id || !(id.startsWith('thesession:') || id.startsWith('irishtuneinfo:'))) return false;

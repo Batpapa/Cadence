@@ -13,6 +13,7 @@ import { getContext } from '../../store';
 import { detectionReviewId, reviewEntryTs } from '../reviewLink';
 import { cardsByTuneId, setCardFor } from '../tunesets';
 import { buildTunesetCard } from '../../services/tunesetCard';
+import { addCardsToDecks } from '../../services/deckService';
 import { fmtTime, type ClipSessionRef, type PreparedClip } from './sessionUiShared';
 import { hasLibrary } from '../../services/pageMode';
 
@@ -283,12 +284,8 @@ export function TunesetDeckButton({ tuneIds, setCard, settled, ctx, getPinnedDec
             alreadyIn: decksContainingCard(setCard.id),
             onConfirm: (deckIds) => {
               setBusy(true);
-              void ctx.mutate(s => {
-                for (const deckId of deckIds) {
-                  const deck = s.decks[deckId];
-                  if (deck && !deck.entries.some(e => e.cardId === setCard.id)) deck.entries.push({ cardId: setCard.id });
-                }
-              }).finally(() => { setBusy(false); onChanged?.(); });
+              void ctx.mutate(s => { addCardsToDecks(s, deckIds, [setCard.id]); })
+                .finally(() => { setBusy(false); onChanged?.(); });
             },
           });
         }}
@@ -321,10 +318,7 @@ export function TunesetDeckButton({ tuneIds, setCard, settled, ctx, getPinnedDec
         s.cards[card.id] = card;
         id = card.id;
       }
-      for (const deckId of deckIds) {
-        const deck = s.decks[deckId];
-        if (deck && id && !deck.entries.some(e => e.cardId === id)) deck.entries.push({ cardId: id });
-      }
+      if (id) addCardsToDecks(s, deckIds, [id]);
     }).finally(() => { setBusy(false); onChanged?.(); });
   };
 

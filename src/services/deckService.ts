@@ -244,6 +244,28 @@ export function moveDeckToParent(s: AppState, deckId: string, newParentId: strin
   else s.rootDeckIds.push(deckId);
 }
 
+/** Files each card into each deck: appended at the end, with no deck-specific
+ *  importance, and only where the deck does not already hold it. A deck id
+ *  that no longer exists (deleted on another device while a picker was open)
+ *  is skipped. Says whether anything was added.
+ *
+ *  The one place this rule lives — it had been written out by hand at some
+ *  twenty sites (imports, analyser, trending, library), each free to drift. */
+export function addCardsToDecks(s: AppState, deckIds: Iterable<string>, cardIds: Iterable<string>): boolean {
+  const cards = [...cardIds];
+  let added = false;
+  for (const deckId of deckIds) {
+    const deck = s.decks[deckId];
+    if (!deck) continue;
+    for (const cardId of cards) {
+      if (deck.entries.some(e => e.cardId === cardId)) continue;
+      deck.entries.push({ cardId });
+      added = true;
+    }
+  }
+  return added;
+}
+
 export function decksContainingCard(cardId: string, user: AppState): string[] {
   return Object.values(user.decks)
     .filter(d => d.entries.some(e => e.cardId === cardId))

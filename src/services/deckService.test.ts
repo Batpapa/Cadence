@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pickSequential, advanceSkips, decksContainingCard, deckIdsByCard } from './deckService';
+import { pickSequential, advanceSkips, decksContainingCard, deckIdsByCard, addCardsToDecks } from './deckService';
 import { emptyState } from '../utils';
 import type { AppState, CardWork, Deck } from '../types';
 
@@ -153,5 +153,49 @@ describe('deckIdsByCard', () => {
       expect(index.get(cardId) ?? []).toEqual(decksContainingCard(cardId, user));
     }
     expect(index.has('none')).toBe(false);
+  });
+});
+
+describe('addCardsToDecks', () => {
+  const withDecks = () => {
+    const user = emptyState();
+    user.decks = {
+      d1: { id: 'd1', name: 'A', entries: [{ cardId: 'a', importance: 3 }] },
+      d2: { id: 'd2', name: 'B', entries: [] },
+    };
+    return user;
+  };
+
+  it('appends the missing cards at the end, without importance, and leaves the present ones as they were', () => {
+    const user = withDecks();
+    expect(addCardsToDecks(user, ['d1'], ['b', 'a', 'c'])).toBe(true);
+    expect(user.decks.d1!.entries).toEqual([{ cardId: 'a', importance: 3 }, { cardId: 'b' }, { cardId: 'c' }]);
+  });
+
+  it('files every card into every deck, a Set as well as an array', () => {
+    const user = withDecks();
+    addCardsToDecks(user, new Set(['d1', 'd2']), ['b']);
+    expect(user.decks.d1!.entries.map(e => e.cardId)).toEqual(['a', 'b']);
+    expect(user.decks.d2!.entries.map(e => e.cardId)).toEqual(['b']);
+  });
+
+  it('skips a deck that no longer exists', () => {
+    const user = withDecks();
+    expect(addCardsToDecks(user, ['gone', 'd2'], ['b'])).toBe(true);
+    expect(Object.keys(user.decks)).toEqual(['d1', 'd2']);
+    expect(user.decks.d2!.entries).toEqual([{ cardId: 'b' }]);
+  });
+
+  it('adds a card named twice only once', () => {
+    const user = withDecks();
+    addCardsToDecks(user, ['d2'], ['b', 'b']);
+    expect(user.decks.d2!.entries).toEqual([{ cardId: 'b' }]);
+  });
+
+  it('says nothing was added when every card is already there', () => {
+    const user = withDecks();
+    expect(addCardsToDecks(user, ['d1'], ['a'])).toBe(false);
+    expect(addCardsToDecks(user, [], ['a'])).toBe(false);
+    expect(user.decks.d1!.entries).toEqual([{ cardId: 'a', importance: 3 }]);
   });
 });

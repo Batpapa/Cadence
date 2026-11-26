@@ -56,7 +56,8 @@ export function copyFileName(name: string, existingNames: readonly string[]): st
 
 /** The tag a clip carried at the end of its NAME until 2026-09-15 — ` [3f9a2c1b·750]`,
  *  just before the extension — so an analysis could tell it was already
- *  attached. It lives in `clipOf` now. */
+ *  attached. It lives in `clipOf` now.
+ *  LEGACY until 2027-03-15 — clip tags in file names, not written since 2026-09-15 (8cc5882): this, migrateClipTags (with its step in importExport.ts's migrateRawCards — a tag only Cadence ever wrote), legacyClipTag and sessionUiShared.tsx's fallbacks on it. */
 const LEGACY_CLIP_TAG = /\s*\[([^[\]\s·]+·\d+)\](?=(\.[^.\s]+)?$)/;
 
 /** A legacy clip tag read out of `name`: its key, and the name without it. */

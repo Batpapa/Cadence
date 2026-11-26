@@ -3,7 +3,7 @@ import { appState } from '../store';
 import { isDriveConnected, registerDrivePendingWork } from '../services/driveService';
 import { refreshStorageEstimate, storageQuota, storageUsage, FULL_RATIO } from '../services/storageService';
 import { driveOnlyAudio, fetchSyncedAudio, freedAudioIds, sessionDbUserId } from './db';
-import { TUNE_ANALYSER_MODULE_KEY, type TuneAnalyserModuleData } from './model';
+import { analyserModuleOf } from './model';
 import { onUnmeteredNetwork, onNetworkChange } from './network';
 
 // ── Bringing the recordings onto this device (2026-10-09) ────────────────────
@@ -213,7 +213,7 @@ export function initAudioDownloads(): void {
   // state goes through cost nothing.
   let syncedKey = '';
   effect(() => {
-    const mod = appState.value.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
+    const mod = analyserModuleOf(appState.value);
     const next = Object.keys(mod?.syncedAudio ?? {}).sort().join(',');
     if (next === syncedKey) return;
     const first = syncedKey === '';

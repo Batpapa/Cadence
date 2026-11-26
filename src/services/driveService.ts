@@ -250,6 +250,7 @@ export function initDriveForUser(userId: string): void {
   if (owner && tokenOwner && owner !== tokenOwner) clearStoredToken();
   // Seed the edit counters for installs predating them (2026-08-31), keeping
   // the one bit the old timestamp bookkeeping carried: "unsynced edits exist".
+  // LEGACY until 2027-02-28 — Drive bookkeeping without edit counters, not written since 2026-08-31 (9d7503d): this seeding.
   if (localStorage.getItem(lsEditSeq(userId)) === null) {
     const local  = parseInt(localStorage.getItem(lsLocalTs(userId))  ?? '0');
     const synced = parseInt(localStorage.getItem(lsSyncedTs(userId)) ?? '0');
@@ -452,9 +453,9 @@ export function reconcileDriveData(read: DriveFileRead): ReconcileResult {
     editSeq:       getEditSeq(),
     syncedSeq:     getSyncedSeq(),
   });
-  // Legacy install proven in sync content-wise: graduate to version-based
-  // tracking on the spot — this is the no-op path virtually every existing
-  // install takes on its first boot after this deploy.
+  // Local and Drive proven the same content by its stamp (a phantom version
+  // bump, or a base known by its stamp only): the current version becomes the
+  // base on the spot.
   if (decision.adoptVersion) localStorage.setItem(lsSyncedVersion(), read.version);
   if (decision.action === 'none' || read.status !== 'ok') return { action: 'none' };
   const { _lastModified: _a, _deviceId: driveDeviceId, ...clean } = read.data;
@@ -781,6 +782,8 @@ async function fetchDriveIdentity(token: string): Promise<{ googleId: string; em
 
 /** Records the account for connections that never got one.
  *
+ *  LEGACY until 2027-03-14 — Drive connections recorded without their account, not written since 2026-09-14 (4d3861a): backfillLoginHint and its call.
+ *
  *  The email is what `login_hint` carries, and without it a renewal is not the
  *  window that closes by itself — it is the account chooser, answered by hand,
  *  once an hour. connectDrive has always meant to record it, but until
@@ -991,7 +994,8 @@ async function flushSync(interactive = false): Promise<void> {
     const ts = Date.now();
     const { id: _id, ...stateWithoutId } = consumed;
     // _lastModified/_deviceId still stamped: clients running the pre-redesign
-    // code read them, and the transitional reconcile path does too.
+    // code read them, and _lastModified is the content stamp reconcilePolicy.ts
+    // compares (phantom version bumps, a base with no version).
     const payload = JSON.stringify({ ...stateWithoutId, _lastModified: ts, _deviceId: getDeviceId() });
     // Noted before it leaves: if Drive commits it and the answer is lost, the
     // next read can still tell it is ours (recogniseOwnLandedWrite).

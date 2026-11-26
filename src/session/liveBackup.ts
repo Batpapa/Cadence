@@ -12,7 +12,7 @@ import {
   collectChunkRecords, appendChunk, clearChunks, putSessionWindows, deleteSessionWindows,
   listDraftSessions, saveSessionMeta, loadSessionAudio, syncAudioByDefault, autoLiveBackupEnabled,
 } from './db';
-import { TUNE_ANALYSER_MODULE_KEY, type Analysis, type TuneAnalyserModuleData, type WindowResult } from './model';
+import { analyserModuleOf, type Analysis, type WindowResult } from './model';
 import type { LiveSession } from './liveSession';
 import { retryRecovery, type RecoveryFailure } from './recovery';
 import {
@@ -393,7 +393,7 @@ async function settleFolder(
 ): Promise<LiveBackupOffer | null> {
   const files = await listCompanionChildren(folderId, interactive);
   const meta = await readMeta(files, interactive);
-  const mod = appState.value.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
+  const mod = analyserModuleOf(appState.value);
   const drafts = await listDraftSessions();
   const audio = await loadSessionAudio(sessionId);
   const match = meta ? matchDevice(meta, getDeviceId(), await deviceSignature()) : null;

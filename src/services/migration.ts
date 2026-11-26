@@ -3,8 +3,27 @@ import { generateId } from '../utils';
 import { ensureCurrentUser, ensureCurrentProfile } from './userService';
 import { migrateClipTags } from './attachmentNames';
 import { migrateAudioMimeTypes } from './audioSniff';
+import { t } from './i18nService';
 
 export const SCHEMA_VERSION = 9;
+
+/** The oldest version still migrated. A step goes six months after the format
+ *  it upgrades stopped being written (the rule for old formats, 2026-11-26 —
+ *  see legacyDeadlines.test.ts): V0 → V1 (a no-op), V1 → V2 (files/embeds into
+ *  attachments, 2026-04-20), V2 → V3 (profiles, 2026-04-20) and V3 → V4
+ *  (TheSession tag casing, 2026-05-14) went on 2026-11-26.
+ *
+ *  A state below it is REFUSED, never read: run through the later steps as if
+ *  it were current it would come out corrupted, its attachments still under
+ *  `files`/`embeds`, its reviews keyed by user rather than profile. Every
+ *  caller turns the refusal into "nothing applied" — an import says why, a
+ *  Drive copy is not applied, a boot falls to the recovery screen — and the
+ *  data stays as it was.
+ *
+ *  importExport.ts's `migrateRawCards` keeps its own copies of the card steps:
+ *  a .cdc written by hand or by an AI carries no version at all and is read as
+ *  v0, a format kept for good. */
+export const OLDEST_SCHEMA = 4;
 
 /** V6 → V7's rule, shared with importExport.ts's `migrateRawCards` so a card
  *  arriving through a .cdc package is stamped exactly like one already in the
@@ -24,88 +43,21 @@ export function stampTuneType(card: Record<string, unknown>): void {
   }
 }
 
-// Each entry migrates from version N to N+1.
-// Use `Record<string, unknown>` to handle partially-typed legacy shapes.
-const migrations: Array<(s: Record<string, unknown>) => void> = [
-  // V0 → V1: baseline schema, no structural changes needed.
-  () => {},
-  // V1 → V2: merge files[] + embeds[] into attachments[] on each card.
-  (s) => {
-    const cards = s['cards'] as Record<string, Record<string, unknown>>;
-    for (const card of Object.values(cards ?? {})) {
-      const content = card['content'] as Record<string, unknown>;
-      if (!content) continue;
-      const files  = (content['files']  as Array<Record<string, unknown>>) ?? [];
-      const embeds = (content['embeds'] as Array<Record<string, unknown>>) ?? [];
-      content['attachments'] = [
-        ...files.map(f  => ({ type: 'file',  ...f })),
-        ...embeds.map(e => ({ type: 'embed', ...e })),
-      ];
-      delete content['files'];
-      delete content['embeds'];
-    }
-  },
-  // V2 → V3: introduce profiles. Each user gets a default profile; cardWorks are re-keyed.
-  (s) => {
-    const users = s['users'] as Record<string, Record<string, unknown>> ?? {};
-    const currentUserId = s['currentUserId'] as string ?? '';
-    const profiles: Record<string, Record<string, unknown>> = {};
-
-    for (const [userId, user] of Object.entries(users)) {
-      const profileId = `${userId}-default`;
-      profiles[profileId] = { id: profileId, name: 'Default' };
-      user['profileIds'] = [profileId];
-    }
-
-    s['profiles'] = profiles;
-    s['currentProfileId'] = currentUserId ? `${currentUserId}-default` : '';
-
-    // Re-key cardWorks: `${userId}:${cardId}` → `${userId}-default:${cardId}`
-    const oldWorks = s['cardWorks'] as Record<string, Record<string, unknown>> ?? {};
-    const newWorks: Record<string, Record<string, unknown>> = {};
-    for (const [key, work] of Object.entries(oldWorks)) {
-      const colonIdx = key.indexOf(':');
-      if (colonIdx === -1) continue;
-      const userId = key.slice(0, colonIdx);
-      const cardId = key.slice(colonIdx + 1);
-      const profileId = `${userId}-default`;
-      const newKey = `${profileId}:${cardId}`;
-      newWorks[newKey] = { ...work, profileId };
-      delete newWorks[newKey]['userId'];
-    }
-    s['cardWorks'] = newWorks;
-  },
-  // V3 → V4: fix TheSession card tags — "thesession" → "TheSession", capitalise key tags,
-  //           leave tune-type tags (reel, jig, etc.) untouched.
-  (s) => {
-    const TUNE_TYPES = new Set([
-      'jig', 'reel', 'slip jig', 'hornpipe', 'polka', 'slide',
-      'waltz', 'barndance', 'strathspey', 'three-two', 'mazurka', 'march',
-    ]);
-    const capitalise = (tag: string) => tag.charAt(0).toUpperCase() + tag.slice(1);
-
-    const cards = s['cards'] as Record<string, Record<string, unknown>>;
-    for (const card of Object.values(cards ?? {})) {
-      const externalId = card['externalId'] as string | undefined;
-      if (!externalId?.startsWith('thesession:')) continue;
-      const tags = card['tags'] as string[] | undefined;
-      if (!Array.isArray(tags)) continue;
-      card['tags'] = tags.map(tag => {
-        if (tag === 'thesession') return 'TheSession';
-        if (TUNE_TYPES.has(tag)) return tag;
-        return capitalise(tag);
-      });
-    }
-  },
+// Keyed by the version each step migrates FROM, to the next: OLDEST_SCHEMA up
+// to SCHEMA_VERSION - 1, none missing (migration.test.ts checks it).
+// `Record<string, unknown>` handles partially-typed legacy shapes.
+const migrations: Record<number, (s: Record<string, unknown>) => void> = {
   // V4 → V5: assign a stable guid to every card (used for cross-device references).
-  (s) => {
+  // LEGACY until 2026-12-12 — states at v4, not written since 2026-06-12 (1e03573): this step, OLDEST_SCHEMA to 5.
+  4: (s) => {
     const cards = s['cards'] as Record<string, Record<string, unknown>>;
     for (const card of Object.values(cards ?? {})) {
       if (!card['guid']) card['guid'] = generateId();
     }
   },
   // V5 → V6: rename card.importance → card.defaultImportance, entry.importanceOverride → entry.importance.
-  (s) => {
+  // LEGACY until 2027-01-02 — states at v5, not written since 2026-07-02 (e80cdc6): this step, OLDEST_SCHEMA to 6.
+  5: (s) => {
     const cards = s['cards'] as Record<string, Record<string, unknown>>;
     for (const card of Object.values(cards ?? {})) {
       if ('importance' in card && !('defaultImportance' in card)) {
@@ -128,13 +80,15 @@ const migrations: Array<(s: Record<string, unknown>) => void> = [
   // V6 → V7: stamp `type: 'tune'` on cards imported from a tune source, so a
   //          library built before card types existed can populate a tuneset.
   //          Writes one optional field; moves and deletes nothing.
-  (s) => {
+  // LEGACY until 2027-03-04 — states at v6, not written since 2026-09-04 (c8f1276): this step, OLDEST_SCHEMA to 7 (stampTuneType stays: importExport uses it).
+  6: (s) => {
     const cards = s['cards'] as Record<string, Record<string, unknown>>;
     for (const card of Object.values(cards ?? {})) stampTuneType(card);
   },
   // V7 → V8: a clip's "already attached" tag moves out of its file name into
   //          `clipOf`, so names can be renamed freely and read cleanly.
-  (s) => {
+  // LEGACY until 2027-03-15 — states at v7, not written since 2026-09-15 (8cc5882): this step, OLDEST_SCHEMA to 8.
+  7: (s) => {
     const cards = s['cards'] as Record<string, Record<string, unknown>>;
     for (const card of Object.values(cards ?? {})) migrateClipTags(card);
   },
@@ -143,11 +97,15 @@ const migrations: Array<(s: Record<string, unknown>) => void> = [
   //          stored as video/webm and so opened in a bare <video> element
   //          rather than the custom player. Reads a head per candidate file,
   //          rewrites one string, and touches nothing it cannot prove.
-  (s) => {
+  // LEGACY until 2027-03-18 — states at v8, not written since 2026-09-18 (8d52dd5): this step, OLDEST_SCHEMA to 9.
+  8: (s) => {
     const cards = s['cards'] as Record<string, Record<string, unknown>>;
     for (const card of Object.values(cards ?? {})) migrateAudioMimeTypes(card);
   },
-];
+};
+
+/** The steps, for migration.test.ts to check that none is missing. */
+export const MIGRATION_STEPS: readonly number[] = Object.keys(migrations).map(Number);
 
 /**
  * Runs all pending migrations on `state` in place, then stamps schemaVersion.
@@ -174,6 +132,12 @@ export function migrateState(user: AppState): void {
     console.warn(`[migration] this state comes from a later build (v${from} > v${SCHEMA_VERSION}) — reading it as it is, and leaving its version alone`);
     return;
   }
+  // Too old to be read any more: refused before anything is touched (see
+  // OLDEST_SCHEMA). A missing version is v0 — every state written since
+  // versions exist carries one.
+  if (from < OLDEST_SCHEMA) {
+    throw new Error(t('migration.tooOld', { from, oldest: OLDEST_SCHEMA }));
+  }
   for (let v = from; v < SCHEMA_VERSION; v++) {
     migrations[v]?.(user as unknown as Record<string, unknown>);
   }
@@ -188,7 +152,8 @@ export function migrateState(user: AppState): void {
 export function applyExternalData(raw: Record<string, unknown>, currentId: string): User {
   let user: User;
   if ('users' in raw && 'currentUserId' in raw) {
-    // Old multi-user AppState format
+    // Old multi-user AppState format.
+    // LEGACY until 2026-12-01 — the multi-user AppState, not written since 2026-06-01 (d8d6257): this branch, with migrateLegacyToUser.
     migrateState(raw as unknown as AppState);
     user = migrateLegacyToUser(raw);
   } else {
@@ -205,6 +170,8 @@ export function applyExternalData(raw: Record<string, unknown>, currentId: strin
 /**
  * Converts the old AppState format (multi-user blob) to the new User format.
  * Run migrateState on the raw old state before calling this.
+ *
+ * LEGACY until 2026-12-01 — the multi-user AppState ({users, currentUserId}), not written since 2026-06-01 (d8d6257): this, applyExternalData's 'users' branch, fullBackup.ts's isOldFormat.
  */
 export function migrateLegacyToUser(raw: Record<string, unknown>): User {
   const currentUserId = raw['currentUserId'] as string ?? '';

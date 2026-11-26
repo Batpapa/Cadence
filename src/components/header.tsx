@@ -28,13 +28,11 @@ import {
   ArrowLeftIcon, ArrowRightIcon, RecordingPulseDot, InstallIcon, WarningTriangleIcon, UpdateIcon, MoreVerticalIcon, LogoutIcon,
 } from './icons';
 import { showAboutModal } from './aboutModal';
+import { initialsOf } from './initials';
 import { useBrandColor } from './cadenceMark';
 import { showStorageModal } from './storageModal';
 import { pinnedModule, isPinnedRouteActive } from './pinnedModule';
 import { storagePersisted, storageUsage, storageQuota, deviceFree, assessStorage, effectivePersisted } from '../services/storageService';
-
-const initialsOf = (name: string) =>
-  name.split(/[\s-]+/).slice(0, 2).map(w => w[0] ?? '').join('').toUpperCase() || '—';
 
 /** `tour`: the name a walkthrough step points at it by (walkthrough/). */
 function HeaderBtn({ title, active, overflow, tour, dot, onClick, children }: {

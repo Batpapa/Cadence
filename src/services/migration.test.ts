@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { migrateState, stampTuneType, SCHEMA_VERSION } from './migration';
+import { migrateState, stampTuneType, SCHEMA_VERSION, OLDEST_SCHEMA, MIGRATION_STEPS } from './migration';
 import { parseCardPackageFromText } from './importExport';
 import type { AppState } from '../types';
 
@@ -11,6 +11,29 @@ function stateWith(...cards: Array<Record<string, unknown>>): AppState {
   cards.forEach((c, i) => { byId[String(c['id'] ?? `c${i}`)] = c; });
   return { schemaVersion: 6, cards: byId } as unknown as AppState;
 }
+
+// ── The floor ───────────────────────────────────────────────────────────────
+// Steps are removed six months after their format stopped being written; what
+// is older than the oldest step left is refused, never half-migrated.
+describe('the oldest version still read', () => {
+  it('has a step from every version between the floor and the current one', () => {
+    const expected = Array.from({ length: SCHEMA_VERSION - OLDEST_SCHEMA }, (_, i) => OLDEST_SCHEMA + i);
+    expect([...MIGRATION_STEPS].sort((a, b) => a - b)).toEqual(expected);
+  });
+
+  it('refuses a state below it, and touches nothing', () => {
+    const s = { schemaVersion: OLDEST_SCHEMA - 1, cards: { a: card({ id: 'a' }) } } as unknown as AppState;
+    const before = JSON.stringify(s);
+    expect(() => migrateState(s)).toThrow();
+    expect(JSON.stringify(s)).toBe(before);
+  });
+
+  it('reads a state with no version as v0 — refused', () => {
+    const s = { cards: { a: card({ id: 'a', content: { notes: '', files: [] } }) } } as unknown as AppState;
+    expect(() => migrateState(s)).toThrow();
+    expect(s.schemaVersion).toBeUndefined();
+  });
+});
 
 describe('stampTuneType', () => {
   it('types a TheSession card as a tune', () => {
@@ -78,8 +101,8 @@ describe('migrateState V6 → V7', () => {
     expect(c.content).toEqual({ notes: '', attachments: [] });
   });
 
-  it('runs on a state that has never been migrated', () => {
-    const s = { cards: { a: card({ id: 'a', externalId: 'thesession:1' }) } } as unknown as AppState;
+  it('runs from the oldest version still read', () => {
+    const s = { schemaVersion: OLDEST_SCHEMA, cards: { a: card({ id: 'a', externalId: 'thesession:1' }) } } as unknown as AppState;
     migrateState(s);
     expect(s.cards['a']!.type).toBe('tune');
   });

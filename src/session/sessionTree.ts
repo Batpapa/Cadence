@@ -1,5 +1,5 @@
 import type { AppState } from '../types';
-import { TUNE_ANALYSER_MODULE_KEY, type SessionFolder, type TuneAnalyserModuleData } from './model';
+import { editAnalyserModule, analyserModuleOf, type SessionFolder } from './model';
 
 // ── Folders over the analyses library ────────────────────────────────────────
 // Same shape as the decks' own folder tree (types.ts's Folder, services/
@@ -49,7 +49,7 @@ export function emptyTree(): SessionTree {
  *  normal state for anyone who has never made a folder). Returns a detached
  *  copy — mutating it changes nothing; `editSessionTree` is how it is written. */
 export function sessionTreeOf(user: AppState): SessionTree {
-  const mod = user.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
+  const mod = analyserModuleOf(user);
   return {
     folders: Object.fromEntries(Object.entries(mod?.folders ?? {}).map(([id, f]) => [id, {
       id: f.id,
@@ -71,21 +71,20 @@ export function sessionTreeOf(user: AppState): SessionTree {
 export function editSessionTree(user: AppState, fn: (tree: SessionTree) => void): void {
   const tree = sessionTreeOf(user);
   fn(tree);
-  user.modules ??= {};
-  const mod = (user.modules[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined) ?? { sessions: {} };
   const empty = Object.keys(tree.folders).length === 0
     && tree.rootFolderIds.length === 0
     && tree.rootSessionIds.length === 0;
-  if (empty) {
-    delete mod.folders;
-    delete mod.rootFolderIds;
-    delete mod.rootSessionIds;
-  } else {
-    mod.folders = tree.folders;
-    mod.rootFolderIds = tree.rootFolderIds;
-    mod.rootSessionIds = tree.rootSessionIds;
-  }
-  user.modules[TUNE_ANALYSER_MODULE_KEY] = mod;
+  editAnalyserModule(user, mod => {
+    if (empty) {
+      delete mod.folders;
+      delete mod.rootFolderIds;
+      delete mod.rootSessionIds;
+    } else {
+      mod.folders = tree.folders;
+      mod.rootFolderIds = tree.rootFolderIds;
+      mod.rootSessionIds = tree.rootSessionIds;
+    }
+  });
 }
 
 // ── Reading the tree ─────────────────────────────────────────────────────────

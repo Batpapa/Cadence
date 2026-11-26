@@ -80,6 +80,37 @@ const overall = (weights: Record<FollowStage, [number, number]>, stage: FollowSt
  *  detection's passage. */
 export interface FollowSamples { pcm: Float32Array; rate: number; from: number }
 
+/** How a run's messages end it: the worker is let go either way. */
+interface WorkerEnd<T> { resolve(value: T): void; reject(error: Error): void }
+
+/** One run of scoreFollowWorker on `request`: every message goes to `handle`,
+ *  which ends the run through `end` — or returns, and the worker keeps going.
+ *  A worker error ends it as a rejection. `signal` stops the worker, and the
+ *  promise then never settles (followAudio's doc). The one place a run is
+ *  started, listened to and let go, for the four kinds of work below. */
+function runFollowWorker<T>(
+  request: ScoreFollowRequest, signal: AbortSignal | undefined,
+  handle: (msg: ScoreFollowResponse, end: WorkerEnd<T>) => void,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL('./recognition/scoreFollowWorker.ts', import.meta.url), { type: 'module' });
+    signal?.addEventListener('abort', () => worker.terminate(), { once: true });
+    const end: WorkerEnd<T> = {
+      resolve: (value) => { worker.terminate(); resolve(value); },
+      reject: (error) => { worker.terminate(); reject(error); },
+    };
+    worker.onmessage = (e: MessageEvent<ScoreFollowResponse>) => handle(e.data, end);
+    worker.onerror = (e) => { e.preventDefault(); end.reject(new Error(e.message)); };
+    worker.postMessage(request);
+  });
+}
+
+/** What none of the four expects: the worker's own error, or a message of
+ *  another kind of work. */
+function unexpected(msg: ScoreFollowResponse): Error {
+  return new Error(msg.type === 'error' ? msg.message : `unexpected ${msg.type}`);
+}
+
 /** Alignments already made in this page, so a tune reopened is followed at
  *  once. Keyed by what decides the result: the recording (by size — one
  *  session's audio does not change — and its id when it has one), the score
@@ -131,42 +162,34 @@ export function followAudio(
     : range
       ? { type: 'follow', audio: audio.blob, score, settingId, from: Math.max(0, followFrom(range.start) - audio.start), to: followTo(range.end) - audio.start }
       : { type: 'follow', audio: audio.blob, score, settingId, from: 0, to: null };
-  return new Promise((resolve, reject) => {
-    const worker = new Worker(new URL('./recognition/scoreFollowWorker.ts', import.meta.url), { type: 'module' });
-    signal?.addEventListener('abort', () => worker.terminate(), { once: true });
-    let weights = WEIGHTS;
-    let span: { from: number; to: number; seconds: number } | null = heard
-      ? { from: heard.from, to: heard.to, seconds: heard.seconds }
-      : null;
-    worker.onmessage = (e: MessageEvent<ScoreFollowResponse>) => {
-      const msg = e.data;
-      if (msg.type === 'progress') {
-        if (msg.stage === 'scan' || msg.stage === 'locate') weights = WEIGHTS_LONG;
-        onStatus({ stage: msg.stage, ratio: overall(weights, msg.stage, msg.ratio) });
-        return;
-      }
-      if (msg.type === 'decoded') {
-        const samples = { pcm: msg.pcm, rate: msg.rate, from: audio.start + msg.from };
-        span = { from: msg.from, to: msg.to, seconds: msg.pcm.length / msg.rate };
-        lastSamples = { key, samples };
-        onSamples?.(samples);
-        if (known) { worker.terminate(); resolve(known.follow); }
-        return;
-      }
-      worker.terminate();
-      if (msg.type === 'followed') {
-        // The 'decoded' message always comes first: the worker sends it
-        // before it starts on the alignment.
-        const at = span ?? { from: request.from, to: request.from, seconds: 0 };
-        const follow = { ...msg.result, from: audio.start + at.from, seconds: at.seconds };
-        done.set(key, { follow, from: at.from, to: at.to });
-        if (msg.heard && span) lastHeard = { stretch, ...span, heard: msg.heard };
-        resolve(follow);
-      } else if (msg.type === 'failed') resolve(msg.reason);
-      else reject(new Error(msg.type === 'error' ? msg.message : `unexpected ${msg.type}`));
-    };
-    worker.onerror = (e) => { e.preventDefault(); worker.terminate(); reject(new Error(e.message)); };
-    worker.postMessage(request);
+  let weights = WEIGHTS;
+  let span: { from: number; to: number; seconds: number } | null = heard
+    ? { from: heard.from, to: heard.to, seconds: heard.seconds }
+    : null;
+  return runFollowWorker<SessionFollow | FollowFailure>(request, signal, (msg, end) => {
+    if (msg.type === 'progress') {
+      if (msg.stage === 'scan' || msg.stage === 'locate') weights = WEIGHTS_LONG;
+      onStatus({ stage: msg.stage, ratio: overall(weights, msg.stage, msg.ratio) });
+      return;
+    }
+    if (msg.type === 'decoded') {
+      const samples = { pcm: msg.pcm, rate: msg.rate, from: audio.start + msg.from };
+      span = { from: msg.from, to: msg.to, seconds: msg.pcm.length / msg.rate };
+      lastSamples = { key, samples };
+      onSamples?.(samples);
+      if (known) end.resolve(known.follow);
+      return;
+    }
+    if (msg.type === 'followed') {
+      // The 'decoded' message always comes first: the worker sends it
+      // before it starts on the alignment.
+      const at = span ?? { from: request.from, to: request.from, seconds: 0 };
+      const follow = { ...msg.result, from: audio.start + at.from, seconds: at.seconds };
+      done.set(key, { follow, from: at.from, to: at.to });
+      if (msg.heard && span) lastHeard = { stretch, ...span, heard: msg.heard };
+      end.resolve(follow);
+    } else if (msg.type === 'failed') end.resolve(msg.reason);
+    else end.reject(unexpected(msg));
   });
 }
 
@@ -179,19 +202,11 @@ export function followSpan(
   signal?: AbortSignal,
 ): Promise<SessionFollow | FollowFailure> {
   const request: ScoreFollowRequest = { type: 'follow', audio, score, settingId, from, to, samples: false };
-  return new Promise((resolve, reject) => {
-    const worker = new Worker(new URL('./recognition/scoreFollowWorker.ts', import.meta.url), { type: 'module' });
-    signal?.addEventListener('abort', () => worker.terminate(), { once: true });
-    worker.onmessage = (e: MessageEvent<ScoreFollowResponse>) => {
-      const msg = e.data;
-      if (msg.type === 'progress' || msg.type === 'decoded') return;
-      worker.terminate();
-      if (msg.type === 'followed') resolve({ ...msg.result, from, seconds: to - from });
-      else if (msg.type === 'failed') resolve(msg.reason);
-      else reject(new Error(msg.type === 'error' ? msg.message : `unexpected ${msg.type}`));
-    };
-    worker.onerror = (e) => { e.preventDefault(); worker.terminate(); reject(new Error(e.message)); };
-    worker.postMessage(request);
+  return runFollowWorker<SessionFollow | FollowFailure>(request, signal, (msg, end) => {
+    if (msg.type === 'progress' || msg.type === 'decoded') return;
+    if (msg.type === 'followed') end.resolve({ ...msg.result, from, seconds: to - from });
+    else if (msg.type === 'failed') end.resolve(msg.reason);
+    else end.reject(unexpected(msg));
   });
 }
 
@@ -208,27 +223,18 @@ export function tempoOfSpan(
 ): Promise<NoveltyStore | FollowFailure> {
   const request: ScoreFollowRequest = { type: 'tempo', audio, from, to };
   let store: NoveltyStore | null = null;
-  return new Promise((resolve, reject) => {
-    const worker = new Worker(new URL('./recognition/scoreFollowWorker.ts', import.meta.url), { type: 'module' });
-    signal?.addEventListener('abort', () => worker.terminate(), { once: true });
-    worker.onmessage = (e: MessageEvent<ScoreFollowResponse>) => {
-      const msg = e.data;
-      if (msg.type === 'progress') { onRatio?.(msg.stage === 'decode' ? msg.ratio / 2 : 0.5 + msg.ratio / 2); return; }
-      if (msg.type === 'decoded') return;
-      if (msg.type === 'novelty') {
-        store ??= new NoveltyStore(msg.fps);
-        store.write(store.length, msg.values);
-        onNovelty(store);
-        return;
-      }
-      worker.terminate();
-      if (msg.type === 'tempo-done') resolve(store ?? 'no_audio');
-      else if (msg.type === 'failed') resolve(msg.reason);
-      else if (msg.type === 'error') reject(new Error(msg.message));
-      else reject(new Error(`unexpected ${msg.type}`));
-    };
-    worker.onerror = (e) => { e.preventDefault(); worker.terminate(); reject(new Error(e.message)); };
-    worker.postMessage(request);
+  return runFollowWorker<NoveltyStore | FollowFailure>(request, signal, (msg, end) => {
+    if (msg.type === 'progress') { onRatio?.(msg.stage === 'decode' ? msg.ratio / 2 : 0.5 + msg.ratio / 2); return; }
+    if (msg.type === 'decoded') return;
+    if (msg.type === 'novelty') {
+      store ??= new NoveltyStore(msg.fps);
+      store.write(store.length, msg.values);
+      onNovelty(store);
+      return;
+    }
+    if (msg.type === 'tempo-done') end.resolve(store ?? 'no_audio');
+    else if (msg.type === 'failed') end.resolve(msg.reason);
+    else end.reject(unexpected(msg));
   });
 }
 
@@ -242,19 +248,11 @@ export type Transcription = { abc: string } | { tooLong: number; max: number };
  *  the listening. `signal` as followAudio's. */
 export function transcribeAudio(audio: Blob, onRatio?: (r: number) => void, signal?: AbortSignal): Promise<Transcription | FollowFailure> {
   const request: ScoreFollowRequest = { type: 'transcribe', audio };
-  return new Promise((resolve, reject) => {
-    const worker = new Worker(new URL('./recognition/scoreFollowWorker.ts', import.meta.url), { type: 'module' });
-    signal?.addEventListener('abort', () => worker.terminate(), { once: true });
-    worker.onmessage = (e: MessageEvent<ScoreFollowResponse>) => {
-      const msg = e.data;
-      if (msg.type === 'progress') { onRatio?.(msg.stage === 'decode' ? msg.ratio / 2 : 0.5 + msg.ratio / 2); return; }
-      worker.terminate();
-      if (msg.type === 'transcribed') resolve({ abc: msg.abc });
-      else if (msg.type === 'too-long') resolve({ tooLong: msg.seconds, max: msg.max });
-      else if (msg.type === 'failed') resolve(msg.reason);
-      else reject(new Error(msg.type === 'error' ? msg.message : `unexpected ${msg.type}`));
-    };
-    worker.onerror = (e) => { e.preventDefault(); worker.terminate(); reject(new Error(e.message)); };
-    worker.postMessage(request);
+  return runFollowWorker<Transcription | FollowFailure>(request, signal, (msg, end) => {
+    if (msg.type === 'progress') { onRatio?.(msg.stage === 'decode' ? msg.ratio / 2 : 0.5 + msg.ratio / 2); return; }
+    if (msg.type === 'transcribed') end.resolve({ abc: msg.abc });
+    else if (msg.type === 'too-long') end.resolve({ tooLong: msg.seconds, max: msg.max });
+    else if (msg.type === 'failed') end.resolve(msg.reason);
+    else end.reject(unexpected(msg));
   });
 }

@@ -1,7 +1,7 @@
 import { openDB, type IDBPDatabase } from 'idb';
 import { signal } from '@preact/signals';
 import {
-  TUNE_ANALYSER_MODULE_KEY,
+  analyserModuleOf, editAnalyserModule,
   type Analysis, type SyncedAudio, type TuneAnalyserModuleData, type WindowResult,
 } from './model';
 import { generatedSessionName } from './sessionNaming';
@@ -87,8 +87,8 @@ function driveModule(): Promise<typeof import('../services/driveService')> {
 // wait for the fleet, ship "read both, write new", then months later drop the
 // old read. Three deploys during which the code carries BOTH names — less
 // legible than the single frozen name it was meant to improve. (The project
-// already pays that toll once: decideReconcile's transitional branch, due out
-// around 2026-11-30.) A cosmetic gain does not buy that.
+// paid that toll once, with decideReconcile's transitional branch, carried
+// from 2026-08-31 to 2026-11-26.) A cosmetic gain does not buy that.
 //
 // So: the boundary is the disk. Above it the code says analysis/detection;
 // at it and below, the keys say what they have always said. Do not "finish
@@ -265,7 +265,9 @@ function migrateSession(s: Analysis | undefined): Analysis | undefined {
  *
  *  A device with neither legacy shape (a genuinely new user, or one already
  *  migrated) resolves almost instantly — a couple of existence checks and
- *  nothing more to do. */
+ *  nothing more to do.
+ *
+ *  LEGACY until 2027-02-26 — the shared and per-user analyser stores, not written since 2026-08-26 (254112f): this, its call, legacyPerUserDbName, LEGACY_SESSIONS_STORE and CHUNKS_STORE's reads (the KV store stays). */
 async function migrateToFinalShape(userId: string): Promise<void> {
   const migratedMeta: Record<string, Analysis> = {};   // finalized → AppState.modules
   const migratedDrafts: Record<string, Analysis> = {}; // status:'recording' → local DRAFT_STORE, never AppState
@@ -332,16 +334,16 @@ async function migrateToFinalShape(userId: string): Promise<void> {
   // ── Apply: finalized metadata → AppState.modules (one write) ─────────────
   if (Object.keys(migratedMeta).length > 0) {
     const { mutate } = await storeModule();
-    await mutate(user => {
-      const existing = (user.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined)?.sessions ?? {};
-      user.modules ??= {};
-      user.modules[TUNE_ANALYSER_MODULE_KEY] = {
-        sessions: {
-          ...Object.fromEntries(Object.entries(migratedMeta).map(([k, v]) => [k, migrateSession(v)!])),
-          ...existing, // already-live data (written through the new path) wins on any overlap
-        },
-      } satisfies TuneAnalyserModuleData;
-    });
+    // The sessions merged into the module as it stands — its other fields
+    // (folders, settings, Drive copies) kept: until 2026-11-26 the module was
+    // rebuilt as `{ sessions }` alone, harmless only as long as nothing else
+    // could be there yet, which a migration retried over several boots breaks.
+    await mutate(user => editAnalyserModule(user, mod => {
+      mod.sessions = {
+        ...Object.fromEntries(Object.entries(migratedMeta).map(([k, v]) => [k, migrateSession(v)!])),
+        ...(mod.sessions ?? {}), // already-live data (written through the new path) wins on any overlap
+      };
+    }));
   }
   // ── Apply: drafts + audio + windows + chunks → local DB only ─────────────
   // A migrated draft (status:'recording') left over from an old device state
@@ -473,7 +475,7 @@ export async function kvSet(key: string, value: unknown): Promise<void> {
 
 async function moduleData(): Promise<TuneAnalyserModuleData> {
   const { appState } = await storeModule();
-  return (appState.value.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined) ?? { sessions: {} };
+  return analyserModuleOf(appState.value) ?? { sessions: {} };
 }
 
 /** A draft (status:'recording') is written locally ONLY, never to AppState:
@@ -492,12 +494,7 @@ export async function saveSessionMeta(session: Analysis): Promise<void> {
     return;
   }
   const { mutate } = await storeModule();
-  await mutate(user => {
-    user.modules ??= {};
-    const mod = (user.modules[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined) ?? { sessions: {} };
-    mod.sessions[session.id] = session;
-    user.modules[TUNE_ANALYSER_MODULE_KEY] = mod;
-  });
+  await mutate(user => editAnalyserModule(user, mod => { mod.sessions[session.id] = session; }));
   await (await localDb()).delete(DRAFT_STORE, session.id); // superseded by the finalized copy above
 }
 
@@ -539,7 +536,7 @@ export async function deleteSessions(sessionIds: string[]): Promise<SessionLefto
   const driveFiles = new Map(sessionIds.flatMap(id => synced[id] ? [[id, synced[id]!.fileId] as const] : []));
   const { mutate } = await storeModule();
   await mutate(user => {
-    const mod = user.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
+    const mod = analyserModuleOf(user);
     if (mod) {
       for (const id of sessionIds) delete mod.sessions[id];
       if (mod.syncedAudio) {
@@ -665,7 +662,7 @@ export const AUTO_LIVE_BACKUP_BY_DEFAULT = true;
  *  scheduler consults this on every tick, and an await per tick to read a flag
  *  would be silly. */
 export function autoLiveBackupEnabled(user: AppStateLike): boolean {
-  const mod = user.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
+  const mod = analyserModuleOf(user);
   return mod?.autoLiveBackup ?? AUTO_LIVE_BACKUP_BY_DEFAULT;
 }
 
@@ -676,37 +673,28 @@ interface AppStateLike { modules?: Record<string, unknown> }
 
 export async function setAutoLiveBackup(on: boolean): Promise<void> {
   const { mutate } = await storeModule();
-  await mutate(user => {
-    user.modules ??= {};
-    const mod = (user.modules[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined) ?? { sessions: {} };
+  await mutate(user => editAnalyserModule(user, mod => {
     mod.autoLiveBackup = on;   // both values written — see the constant above
-    user.modules[TUNE_ANALYSER_MODULE_KEY] = mod;
-  });
+  }));
 }
 
 export async function setSyncAudioByDefault(on: boolean): Promise<void> {
   const { mutate } = await storeModule();
-  await mutate(user => {
-    user.modules ??= {};
-    const mod = (user.modules[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined) ?? { sessions: {} };
+  await mutate(user => editAnalyserModule(user, mod => {
     // Both values are written, unlike everywhere else in this codebase where
     // absence is the default. It has to be: the default is now ON, so deleting
     // the key on "off" would store the opposite of what the user just asked
     // for, and their choice would be undone at the next read.
     mod.syncAudioByDefault = on;
-    user.modules[TUNE_ANALYSER_MODULE_KEY] = mod;
-  });
+  }));
 }
 
 async function recordSyncedAudio(sessionId: string, entry: SyncedAudio): Promise<void> {
   const { mutate } = await storeModule();
-  await mutate(user => {
-    user.modules ??= {};
-    const mod = (user.modules[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined) ?? { sessions: {} };
+  await mutate(user => editAnalyserModule(user, mod => {
     mod.syncedAudio ??= {};
     mod.syncedAudio[sessionId] = entry;
-    user.modules[TUNE_ANALYSER_MODULE_KEY] = mod;
-  });
+  }));
 }
 
 /** Drops the Drive record, and sends the Drive file to the user's trash unless
@@ -720,7 +708,7 @@ async function dropSyncedAudio(sessionId: string, fileAlreadyGone = false): Prom
   if (!fileAlreadyGone) await (await driveModule()).trashCompanionFile(entry.fileId);
   const { mutate } = await storeModule();
   await mutate(user => {
-    const mod = user.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
+    const mod = analyserModuleOf(user);
     if (mod?.syncedAudio) {
       delete mod.syncedAudio[sessionId];
       if (Object.keys(mod.syncedAudio).length === 0) delete mod.syncedAudio;
@@ -1090,7 +1078,7 @@ export async function reconcileSyncedAudio(): Promise<number> {
 
   const { mutate } = await storeModule();
   await mutate(user => {
-    const m = user.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
+    const m = analyserModuleOf(user);
     if (!m?.syncedAudio) return;
     for (const id of stale) delete m.syncedAudio[id];
     if (Object.keys(m.syncedAudio).length === 0) delete m.syncedAudio;
@@ -1152,7 +1140,7 @@ export async function unsyncSessionAudio(sessionId: string): Promise<void> {
  *  same narrowing to what the discarded state no longer had, as the
  *  attachments' reuploadResurrected. Drive unreachable: nothing touched. */
 export async function untrashResurrectedAudio(discarded: AppStateLike): Promise<number> {
-  const there = (discarded.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined)?.syncedAudio ?? {};
+  const there = analyserModuleOf(discarded)?.syncedAudio ?? {};
   const candidates = Object.entries((await moduleData()).syncedAudio ?? {})
     .filter(([sessionId]) => !there[sessionId]);
   if (candidates.length === 0) return 0;

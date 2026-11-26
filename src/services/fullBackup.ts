@@ -2,7 +2,7 @@ import type { AppState } from '../types';
 import { toDateStr, downloadCadenceFile } from '../utils';
 import { buildZipBlob, readZipBlob, isZipBlob, audioExtension, ZIP32_MAX_BYTES, type ZipBlobEntry } from './zip';
 import { loadSessionAudio, saveSessionAudio } from '../session/db';
-import { TUNE_ANALYSER_MODULE_KEY, type TuneAnalyserModuleData } from '../session/model';
+import { analyserModuleOf } from '../session/model';
 import { externalAttachmentBlobs, externalAttachmentBytes, type ExportGate } from './attachmentStore';
 
 // ── Backups (.cdb, .cdbf) ────────────────────────────────────────────────────
@@ -26,6 +26,7 @@ import { externalAttachmentBlobs, externalAttachmentBytes, type ExportGate } fro
 // parseJsonBackup, isValidBackup and the branch that calls them. The recovery
 // screen (main.ts, ?mode=recovery) still WRITES a JSON .cdb: move it to the
 // archive first.
+// LEGACY until 2027-01-15 — the JSON .cdb, not written by the app since 2026-11-16 (5fba61d), still by the recovery screen: parseJsonBackup, isValidBackup and their branch (decided 2026-11-15, earlier than the six-month rule).
 
 export const BACKUP_DATA_ENTRY = 'data.cdb';
 const AUDIO_DIR = 'audio/';
@@ -46,7 +47,7 @@ export class BackupTooLarge extends Error {
 }
 
 function sessionsOf(user: AppState): Record<string, { mimeType?: string }> {
-  const mod = user.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
+  const mod = analyserModuleOf(user);
   return (mod?.sessions ?? {}) as Record<string, { mimeType?: string }>;
 }
 
@@ -193,7 +194,8 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 
 function isValidBackup(data: unknown): data is Record<string, unknown> {
   if (!isRecord(data)) return false;
-  // Old format: has users map + cards
+  // Old format: has users map + cards.
+  // LEGACY until 2026-12-01 — the multi-user AppState in a JSON .cdb, not written since 2026-06-01 (d8d6257): isOldFormat.
   const isOldFormat = isRecord(data['users']) && isRecord(data['cards']);
   // New format: has cards + profiles directly (id may be absent — stripped on export)
   const isNewFormat = isRecord(data['cards']) && isRecord(data['profiles']);

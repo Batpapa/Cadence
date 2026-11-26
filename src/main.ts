@@ -90,6 +90,20 @@ export async function createAndOpenUser(name: string, root: HTMLElement): Promis
   await openBrandNewUser(user, root);
 }
 
+/** The opened user's own storage: its analyser database, its attachments'
+ *  database and their sync. Every way of opening a user goes through here, so
+ *  a store added later is added once.
+ *
+ *  Must run after appState.value holds this user (commitState): the analyser
+ *  database's migration path reads and writes AppState through store.ts's
+ *  mutate() — a brand-new user never has legacy data, but the check itself
+ *  still needs the right user in scope. */
+async function openUserStores(userId: string): Promise<void> {
+  await initSessionDbForUser(userId);
+  initAttachmentDbForUser(userId);
+  initAttachmentSync();
+}
+
 /** Everything after the Drive bookkeeping has been initialised for `user`. */
 async function openBrandNewUser(user: User, root: HTMLElement): Promise<void> {
   // Extensions off for a new user, written out: absent means on
@@ -102,13 +116,7 @@ async function openBrandNewUser(user: User, root: HTMLElement): Promise<void> {
   setLastUserId(user.id);
   touchUserOrder(user.id);
   setLanguage(user.language);
-  // Must run after appState.value is set — its migration path (a brand-new
-  // user never has legacy data, but the check itself still needs the right
-  // user in scope) reads/writes AppState via store.ts's mutate().
-  await initSessionDbForUser(user.id);
-  initAttachmentDbForUser(user.id);
-
-  initAttachmentSync();
+  await openUserStores(user.id);
   initRoutePersistence(user.id);
   // Asked BEFORE finishBoot, which takes the standalone analyser's waiting
   // analyses in: someone bringing those has answered already — their import
@@ -190,10 +198,7 @@ async function recoverUserFromDrive(root: HTMLElement): Promise<DriveRecovery> {
       setLastUserId(user.id);
       touchUserOrder(user.id);
       setLanguage(appState.value.language);
-      await initSessionDbForUser(user.id);
-      initAttachmentDbForUser(user.id);
-
-      initAttachmentSync();
+      await openUserStores(user.id);
       initRoutePersistence(user.id);
       finishBoot(root);
       return { kind: 'opened' };
@@ -245,11 +250,7 @@ export async function openUser(id: string, root: HTMLElement): Promise<void> {
   await saveUser(saved);
   setLastUserId(id);
   touchUserOrder(id);
-  // See createAndOpenUser's identical comment — must run after appState.value.
-  await initSessionDbForUser(id);
-  initAttachmentDbForUser(id);
-
-  initAttachmentSync();
+  await openUserStores(id);
   const savedRoute = loadSavedRoute(saved);
   if (savedRoute) routeSignal.value = savedRoute;
   initRoutePersistence(saved.id);
@@ -290,6 +291,7 @@ export async function openUser(id: string, root: HTMLElement): Promise<void> {
     await initDb();
 
     // ── Migration: old single-blob AppState → new User store ──────────────────
+    // LEGACY until 2026-12-01 — the single-blob IndexedDB store, not written since 2026-06-01 (d8d6257): this branch, db.ts's loadLegacyState/deleteLegacyState (db.ts's upgrade that drops the store stays).
     const legacy = await loadLegacyState();
     if (legacy && (legacy['currentUserId'] as string)) {
       migrateState(legacy as unknown as User);
@@ -301,11 +303,7 @@ export async function openUser(id: string, root: HTMLElement): Promise<void> {
       await deleteLegacyState();
       setLastUserId(user.id);
       setLanguage(user.language);
-      // See createAndOpenUser's identical comment — must run after appState.value.
-      await initSessionDbForUser(user.id);
-      initAttachmentDbForUser(user.id);
-
-      initAttachmentSync();
+      await openUserStores(user.id);
       initRoutePersistence(user.id);
       finishBoot(root);
       return;

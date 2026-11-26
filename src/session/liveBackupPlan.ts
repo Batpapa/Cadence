@@ -66,7 +66,8 @@ export interface LiveBackupMeta {
   deviceId: string;
   deviceModel: string;
   /** Optional: backups written before 2026-09-17 have none, and a browser that
-   *  says nothing useful leaves it out too. */
+   *  says nothing useful leaves it out too.
+   *  LEGACY until 2027-03-17 — live backups without a device signature, not written since 2026-09-17 (0c3f2a2): the fallback on deviceModel (stop writing deviceModel first). */
   device?: DeviceSignature;
   updatedAt: number;
 }

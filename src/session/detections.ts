@@ -1,5 +1,5 @@
 import type { Card } from '../types';
-import { TUNE_ANALYSER_MODULE_KEY, type Analysis, type Detection, type TuneAnalyserModuleData } from './model';
+import { analyserModuleOf, type Analysis, type Detection } from './model';
 import { cardGuidOf, cardTuneId } from './recognition/cardIndex';
 
 // ── "Detected in": the sessions where a card's tune was recognised ────────────
@@ -106,7 +106,7 @@ export function findCardDetections(card: Card, sessions: Record<string, Analysis
 
 /** Whether this module's panel should appear on card pages. Absent = yes. */
 export function detectionsOnCards(user: { modules?: Record<string, unknown> }): boolean {
-  return (user.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined)?.detectionsOnCards !== false;
+  return analyserModuleOf(user)?.detectionsOnCards !== false;
 }
 
 /** Whether sets are detected and shown at all — "Use set detection", an
@@ -114,12 +114,12 @@ export function detectionsOnCards(user: { modules?: Record<string, unknown> }): 
  *  exactly as it did before sets existed. Reads the stored `experimentalSets`
  *  field, whose name outlived the experiment (see TuneAnalyserModuleData). */
 export function setDetectionOn(user: { modules?: Record<string, unknown> }): boolean {
-  return (user.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined)?.experimentalSets !== false;
+  return analyserModuleOf(user)?.experimentalSets !== false;
 }
 
 
 /** The module's slice of a user blob — read here rather than through db.ts so
  *  this stays a pure function of state, testable without a database. */
 export function sessionsOf(user: { modules?: Record<string, unknown> }): Record<string, Analysis> {
-  return (user.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined)?.sessions ?? {};
+  return analyserModuleOf(user)?.sessions ?? {};
 }

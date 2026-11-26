@@ -777,10 +777,15 @@ export function showPreviewModal(
   // modal actually closes for any reason (✕, outside click, Escape).
   let stopAudio: () => void = () => {};
   let closed = false;
-  // Set by the ABC branch, which is the only one with a keyboard shortcut to
-  // take down. A document-level listener outliving its modal would keep
-  // swallowing the space bar for the rest of the session.
-  let releaseKeys: () => void = () => {};
+  // What the ABC branch takes down with the modal: its keyboard shortcut (a
+  // document-level listener outliving its modal would keep swallowing the
+  // space bar for the rest of the session), its timers, the watch on the
+  // score's box, the player. Run in the order registered. One registered once
+  // the modal is gone — abcjs arriving after a quick close — runs at once:
+  // when it was a chain of reassigned closures, such a late link was simply
+  // never called.
+  const onClosed: Array<() => void> = [];
+  const whenClosed = (fn: () => void) => { if (closed) fn(); else onClosed.push(fn); };
   // Set by the PDF branch when pdf.js draws the pages: its worker and canvases
   // go with the modal.
   let releasePdf: () => void = () => {};
@@ -794,7 +799,7 @@ export function showPreviewModal(
   let releasePlayAlong: () => void = () => {};
   // And the watch on the row of the toggles' labels.
   let releaseToggleRow: () => void = () => {};
-  const onDismiss = () => { closed = true; stopAudio(); releaseKeys(); releasePdf(); releaseFullscreen(); releaseAudioSync(); releasePlayAlong(); releaseToggleRow(); };
+  const onDismiss = () => { closed = true; stopAudio(); for (const fn of onClosed.splice(0)) fn(); releasePdf(); releaseFullscreen(); releaseAudioSync(); releasePlayAlong(); releaseToggleRow(); };
 
   const body = document.createElement('div');
   body.className = 'w-full flex items-center justify-center';
@@ -3201,6 +3206,9 @@ export function showPreviewModal(
     }
 
     import('abcjs').then((abcjs) => {
+      // Closed while abcjs was still loading: no score, player or listener for
+      // a dialog nobody sees — the audio branch's same check.
+      if (closed) return;
       // ── The stave's face of the cursor ───────────────────────────────────
       // Keeps the cursor's staff in the middle of what is visible of the
       // score — a fused set runs to several systems, and reading it meant
@@ -3930,7 +3938,7 @@ export function showPreviewModal(
         transport.playPause();
       };
       document.addEventListener('keydown', onKeyDown);
-      releaseKeys = () => document.removeEventListener('keydown', onKeyDown);
+      whenClosed(() => document.removeEventListener('keydown', onKeyDown));
 
       // ── The score follows its box ────────────────────────────────────────
       // Engraving to the box's width means the engraving is only right for the
@@ -4021,8 +4029,7 @@ export function showPreviewModal(
         if (textWarnMarks.length) { textWarnMarks = []; paintText(); }
         warnTimer = window.setTimeout(checkWarnings, 250);
       });
-      const stopWarnTimer = releaseKeys;
-      releaseKeys = () => { stopWarnTimer(); window.clearTimeout(warnTimer); window.clearTimeout(typingTimer); };
+      whenClosed(() => { window.clearTimeout(warnTimer); window.clearTimeout(typingTimer); });
       remeasure = () => {
         // The line between the faces held: engraved once it is let go.
         if (faceSplit.splitting() || !showsSheet(currentMode) || !notation.querySelector('svg')) return;
@@ -4039,18 +4046,15 @@ export function showPreviewModal(
       // Hung on the same hook as the keyboard shortcut: both outlive the modal
       // otherwise, and an observer watching a detached box is a leak that keeps
       // a whole score alive with it.
-      const stopKeys = releaseKeys;
-      releaseKeys = () => { stopKeys(); releaseResize(); };
+      whenClosed(releaseResize);
       // The player goes with the dialog too.
-      const stopWithPlayer = releaseKeys;
-      releaseKeys = () => {
-        stopWithPlayer();
+      whenClosed(() => {
         // Stopped, and the sound made ahead let go of.
         window.clearTimeout(prepareTimer);
         player.dispose();
         document.removeEventListener('selectionchange', onSelectionChange);
         cancelAnimationFrame(previewRaf);
-      };
+      });
 
       // Changing instrument without losing your place: the stave redrawn —
       // the paper is set in that dialog too — and the music rebuilt at the

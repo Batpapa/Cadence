@@ -17,6 +17,7 @@ import { CheckIcon } from './icons';
 import { InlineStatus, Segmented, Switch } from './ui';
 import { InputRow, SuggestDropdown, errorLine, successLine } from './importAtoms';
 import { mutateWithRule } from '../services/attachmentStore';
+import { addCardsToDecks } from '../services/deckService';
 
 /** Only the newest lookup gets to write — a local copy of theSessionImport's
  *  (the field and its list are shared, in importAtoms.tsx; this hook is not).
@@ -155,12 +156,7 @@ async function fetchViaTheSession(
 function commitCards(newCards: Card[], linkIds: string[], getTargetDeckIds?: () => Set<string> | undefined): Promise<void> {
   return mutateWithRule(s => {
     for (const card of newCards) { s.cards[card.id] = card; }
-    for (const deckId of (getTargetDeckIds?.() ?? [])) {
-      const deck = s.decks[deckId]; if (!deck) continue;
-      for (const cardId of linkIds) {
-        if (!deck.entries.some(e => e.cardId === cardId)) deck.entries.push({ cardId });
-      }
-    }
+    addCardsToDecks(s, getTargetDeckIds?.() ?? [], linkIds);
   });
 }
 
@@ -257,12 +253,7 @@ export function IrishTuneInfoBody({ ctx, getTargetDeckIds, onNavigateToCard, wit
       const tune = await fetchTuneById(tuneId);
       const existing = findByExternalId(`irishtuneinfo:${tune.id}`, appState.value.cards);
       if (existing) {
-        await mutateWithRule(s => {
-          for (const deckId of (getTargetDeckIds?.() ?? [])) {
-            const deck = s.decks[deckId];
-            if (deck && !deck.entries.some(e => e.cardId === existing.id)) deck.entries.push({ cardId: existing.id });
-          }
-        });
+        await mutateWithRule(s => { addCardsToDecks(s, getTargetDeckIds?.() ?? [], [existing.id]); });
         setStatus(t('irishTuneInfo.status.alreadyInLibrary', { name: tune.name }));
         setBusy(false);
       } else {
@@ -270,10 +261,7 @@ export function IrishTuneInfoBody({ ctx, getTargetDeckIds, onNavigateToCard, wit
         const card = tuneToCard(tune, audioFile);
         await mutateWithRule(s => {
           s.cards[card.id] = card;
-          for (const deckId of (getTargetDeckIds?.() ?? [])) {
-            const deck = s.decks[deckId];
-            if (deck && !deck.entries.some(e => e.cardId === card.id)) deck.entries.push({ cardId: card.id });
-          }
+          addCardsToDecks(s, getTargetDeckIds?.() ?? [], [card.id]);
         });
         setImportedStatus(card.id, card.name);
         onSuccess();

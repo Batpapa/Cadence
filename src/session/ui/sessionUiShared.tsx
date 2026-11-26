@@ -8,6 +8,7 @@ import { downloadIcon } from '../../components/playbackIcons';
 import { confirmModal } from '../../components/modal';
 import { useContextMenu, type ContextMenuEntry } from '../../components/contextMenu';
 import { findByExternalId, fetchTuneById, tuneResultToCard } from '../../services/theSessionService';
+import { addCardsToDecks } from '../../services/deckService';
 import { isCardId } from '../recognition/cardIndex';
 import { showDeckChoiceModal, decksContainingCard, isInEveryDeck, deckAddIcon } from '../../components/deckSelector';
 import { primeCachedTuneNames, cachedTuneName, ensureTuneNameIndex } from '../../services/tuneNameIndexService';
@@ -782,10 +783,7 @@ export function TuneDeckButton({ tuneId, ctx, getPinnedDeckIds, onCardAdded, car
         const existing = card.externalId ? findByExternalId(card.externalId, s.cards) : undefined;
         const id = existing?.id ?? card.id;
         if (!existing) s.cards[id] = card;
-        for (const deckId of deckIds) {
-          const deck = s.decks[deckId];
-          if (deck && !deck.entries.some(e => e.cardId === id)) deck.entries.push({ cardId: id });
-        }
+        addCardsToDecks(s, deckIds, [id]);
       });
       onCardAdded?.();
     } finally {
@@ -797,12 +795,7 @@ export function TuneDeckButton({ tuneId, ctx, getPinnedDeckIds, onCardAdded, car
     if (!known) return;
     setBusy(true);
     try {
-      await ctx.mutate(s => {
-        for (const deckId of deckIds) {
-          const deck = s.decks[deckId];
-          if (deck && !deck.entries.some(e => e.cardId === known.id)) deck.entries.push({ cardId: known.id });
-        }
-      });
+      await ctx.mutate(s => { addCardsToDecks(s, deckIds, [known.id]); });
     } finally {
       setBusy(false);
     }

@@ -118,6 +118,7 @@ export async function checkEmbed(url: string): Promise<LinkCheck> {
   }
   try {
     const head = await probeRemoteFile(url);
+    // LEGACY until 2027-03-29 — bundles that only know iframes, not shipped since 2026-09-29 (50a419d): `embedUrl: url` for a file.
     return { ok: true, title: head.name, embedUrl: url };
   } catch (e) {
     return { ok: false, refusal: e instanceof RemoteFileError ? e.refusal : { why: 'nowhere' } };

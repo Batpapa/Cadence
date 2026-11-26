@@ -12,7 +12,8 @@ export function isNative(): boolean {
 /** Whether the app's native side has this plugin — false in a browser, and in
  *  an app installed before the plugin existed, which still receives the
  *  current page over the air (otaUpdate.ts). Read the same way, for the same
- *  reason. */
+ *  reason.
+ *  LEGACY until 2027-04-26 — APKs without the native plugins, the last added 2026-10-26 (85e3664): this check at its call sites (audioFocus, diskSpace, sources, systemBars), once MIN_NATIVE_BUILD (scripts/ota-bundle.js) is the first APK that has them all. */
 export function hasNativePlugin(name: string): boolean {
   return isNative() && capacitor()?.isPluginAvailable?.(name) === true;
 }

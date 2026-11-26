@@ -78,7 +78,8 @@ export interface EmbedEntry {
    *  is a plain FILE (since 2026-09-29, opened by Cadence's own viewers — see
    *  remoteFile.ts), the file's own URL: an older bundle knows nothing but the
    *  iframe, and an mp3 or a PDF in one still plays or shows. Which of the two
-   *  an embed is comes from `isFileEmbed()`, never from this field. */
+   *  an embed is comes from `isFileEmbed()`, never from this field.
+   *  LEGACY until 2027-03-29 — bundles that only know iframes, not shipped since 2026-09-29 (50a419d): writing a file's own URL here (embedService.ts checkEmbed). */
   embedUrl?: string;
   /** Written explicitly on both sides since 2026-09-22 — see LinkMode. */
   mode?: LinkMode;
@@ -531,7 +532,8 @@ export type Route =
       folder?: string;
       sort?: TuneSort; sortAsc?: boolean; others?: [string, FilterState][]; othersOr?: boolean;
       analyses?: [string, FilterState][]; analysesOr?: boolean;
-      /** Read only: routes saved before the two sections became "Tags". */
+      /** Read only: routes saved before the two sections became "Tags".
+       *  LEGACY until 2027-04-19 — the dances/modes filters, not written since 2026-10-19 (ffbc51f): these two and DetectionsLibrary.tsx's fallback on them. */
       dances?: [string, FilterState][]; modes?: [string, FilterState][];
       /** Tune types and keys, one section since 2026-10-19. */
       tags?: [string, FilterState][]; tagsOr?: boolean;

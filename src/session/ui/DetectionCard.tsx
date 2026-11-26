@@ -13,7 +13,7 @@ import { AbcPreview, TuneFacts } from './abcPreview';
 import { PlayDisc, playFromTitle, detectionAudioSync } from './PassRow';
 import { scrollContainerOf } from './domInterop';
 import { showAlternatesPopover } from './AlternatesPopover';
-import { BUCKET_BADGE, tuneName, useTuneNames, TuneDeckButton } from './sessionUiShared';
+import { BUCKET_BADGE, tuneName, useTuneNames, TuneDeckButton, fmtLongTime } from './sessionUiShared';
 import { getContext } from '../../store';
 import { viterbiPickOf, hasRecognisedSetting, keyOffsetOf, type Detection, type DetectionAlternate } from '../model';
 import { reviewEntryIndex } from '../../services/reviewEntries';
@@ -157,14 +157,6 @@ export interface DetectionCardOptions {
   getLatestDetection?: (annotationId: string) => Detection | undefined;
 }
 
-
-function fmtLongTime(s: number): string {
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = Math.floor(Math.max(0, s) % 60);
-  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
-  return `${m}:${String(sec).padStart(2, '0')}`;
-}
 
 // ── Review logging from a recognised tune ─────────────────────────────────────
 // "I played it at this session" = one review entry at the detection's end

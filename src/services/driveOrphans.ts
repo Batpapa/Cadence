@@ -1,5 +1,5 @@
 import type { AppState } from '../types';
-import { TUNE_ANALYSER_MODULE_KEY, type TuneAnalyserModuleData } from '../session/model';
+import { analyserModuleOf } from '../session/model';
 import {
   isDriveConnected, hasDriveToken, manualSync, readDriveFile, findCompanionPath,
   listCompanionChildren, trashCompanionFile, driveBlobSize, type DriveChild,
@@ -82,7 +82,7 @@ function referenced(state: AppState): { attachments: Set<string>; recordings: Se
     }
   }
   const recordings = new Set<string>();
-  const mod = state.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
+  const mod = analyserModuleOf(state);
   for (const entry of Object.values(mod?.syncedAudio ?? {})) {
     if (entry?.fileId) recordings.add(entry.fileId);
   }

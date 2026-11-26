@@ -21,6 +21,7 @@ import { getSettingAbcMeta } from '../session/recognition/indexStore';
 // roughly 380 MB of audio a JavaScript string cannot hold it at all. The zip
 // points at the stored recording instead of copying it.
 //
+// LEGACY until 2027-05-15 — the JSON .cds, not written since 2026-11-16 (5fba61d): openLegacyPackage and its branch.
 // LEGACY READ — the JSON format is still read, for the files people keep.
 // To be REMOVED ON 2027-05-15 (decided 2026-11-15): openLegacyPackage and the
 // branch that calls it.

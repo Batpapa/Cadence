@@ -4,6 +4,7 @@ import type { ComponentChild } from 'preact';
 import type { AppContext, Card } from '../types';
 import { generateId, focusIfDesktop, sortByRelevance, ownFormatAccept } from '../utils';
 import { parseCardPackage } from '../services/importExport';
+import { addCardsToDecks } from '../services/deckService';
 import { externaliseIncoming, uploadAttachmentSoon, mutateWithRule } from '../services/attachmentStore';
 import { downloadShareBlob } from '../services/shareService';
 import { mutate, appState } from '../store';
@@ -43,11 +44,7 @@ async function importCardPackage(cards: Card[], deckIds: Iterable<string>): Prom
     for (const card of cards) {
       const existing = card.externalId ? findByExternalId(card.externalId, s.cards) : s.cards[card.id];
       if (!existing) { s.cards[card.id] = card; imported++; }
-      const targetId = existing?.id ?? card.id;
-      for (const deckId of deckIds) {
-        const deck = s.decks[deckId]; if (!deck) continue;
-        if (!deck.entries.some(e => e.cardId === targetId)) deck.entries.push({ cardId: targetId });
-      }
+      addCardsToDecks(s, deckIds, [existing?.id ?? card.id]);
     }
   });
   for (const att of moved) uploadAttachmentSoon(att);
@@ -172,22 +169,14 @@ export function TheSessionBody({ ctx, getTargetDeckIds, onNavigateToCard, withDe
     const existing = findByExternalId(`thesession:${tune.id}`, appState.value.cards);
     withDeckChoice(() => { void (async () => {
       if (existing) {
-        await mutate(s => {
-          for (const deckId of (getTargetDeckIds?.() ?? [])) {
-            const deck = s.decks[deckId];
-            if (deck && !deck.entries.some(e => e.cardId === existing.id)) deck.entries.push({ cardId: existing.id });
-          }
-        });
+        await mutate(s => { addCardsToDecks(s, getTargetDeckIds?.() ?? [], [existing.id]); });
         setStatus(t('theSession.status.alreadyInLibrary', { name: tune.name }));
         setBusy(false);
       } else {
         const card = tuneResultToCard(tune);
         await mutateWithRule(s => {
           s.cards[card.id] = card;
-          for (const deckId of (getTargetDeckIds?.() ?? [])) {
-            const deck = s.decks[deckId];
-            if (deck && !deck.entries.some(e => e.cardId === card.id)) deck.entries.push({ cardId: card.id });
-          }
+          addCardsToDecks(s, getTargetDeckIds?.() ?? [], [card.id]);
         });
         setImportedStatus(card.id, card.name);
         onSuccess();
@@ -225,12 +214,7 @@ export function TheSessionBody({ ctx, getTargetDeckIds, onNavigateToCard, withDe
       await mutateWithRule(s => {
         for (const card of newCards) { s.cards[card.id] = card; }
         const linkIds = [...newCards.map(c => c.id), ...skippedIds.map(id => existingCardIdByTuneId.get(id)!)];
-        for (const deckId of (getTargetDeckIds?.() ?? [])) {
-          const deck = s.decks[deckId]; if (!deck) continue;
-          for (const cardId of linkIds) {
-            if (!deck.entries.some(e => e.cardId === cardId)) deck.entries.push({ cardId });
-          }
-        }
+        addCardsToDecks(s, getTargetDeckIds?.() ?? [], linkIds);
       });
       setStatus(successLine(batchSummary(newCards.length, skippedIds.length, blocked)));
       onDone();
@@ -545,12 +529,7 @@ function MemberTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
           // Already-owned tunes were skipped above (no re-fetch), but they
           // still belong in the chosen decks if they were missing there.
           const linkIds = [...newCards.map(c => c.id), ...skippedIds.map(id => existingCardIdByTuneId.get(id)!)];
-          for (const deckId of (getTargetDeckIds?.() ?? [])) {
-            const deck = s.decks[deckId]; if (!deck) continue;
-            for (const cardId of linkIds) {
-              if (!deck.entries.some(e => e.cardId === cardId)) deck.entries.push({ cardId });
-            }
-          }
+          addCardsToDecks(s, getTargetDeckIds?.() ?? [], linkIds);
         });
         setProgress(100);
         setStatus(successLine(batchSummary(newCards.length, skippedIds.length, blocked)));
@@ -758,12 +737,7 @@ function BookmarksTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
             ...newCards.map(c => c.id),
             ...bookmarks.map(b => existingByTuneId.get(b.tuneId)).filter((id): id is string => !!id),
           ];
-          for (const deckId of (getTargetDeckIds?.() ?? [])) {
-            const deck = s.decks[deckId]; if (!deck) continue;
-            for (const cardId of linkIds) {
-              if (!deck.entries.some(e => e.cardId === cardId)) deck.entries.push({ cardId });
-            }
-          }
+          addCardsToDecks(s, getTargetDeckIds?.() ?? [], linkIds);
         });
         setProgress(100);
         setStatus(successLine(batchSummary(newCards.length, skipped, blocked)));
@@ -975,12 +949,7 @@ function SetsTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
       if (!aliveRef.current) return;
       setStatus(t('sessions.batch.saving'));
       await mutateWithRule(s => {
-        const file = (cardId: string) => {
-          for (const deckId of (getTargetDeckIds?.() ?? [])) {
-            const deck = s.decks[deckId]; if (!deck) continue;
-            if (!deck.entries.some(e => e.cardId === cardId)) deck.entries.push({ cardId });
-          }
-        };
+        const file = (cardId: string) => { addCardsToDecks(s, getTargetDeckIds?.() ?? [], [cardId]); };
         for (const id of alreadyIds) file(id);
         for (const { setCard, newTunes } of built) {
           for (const tune of newTunes) s.cards[tune.id] = tune;
@@ -1151,10 +1120,8 @@ function CreateStep({ withDeckChoice, getChosenDeckIds, onOpenCard }: {
       const guid = generateId();
       createdId = id;
       s.cards[id] = { id, guid, name: trimmed, defaultImportance: 1, tags: [], content: { notes: '', attachments: [] } };
-      for (const deckId of getChosenDeckIds()) { // doCreate only ever runs via withDeckChoice, which guarantees this
-        const deck = s.decks[deckId];
-        if (deck && !deck.entries.some(e => e.cardId === id)) deck.entries.push({ cardId: id });
-      }
+      // doCreate only ever runs via withDeckChoice, which guarantees the choice.
+      addCardsToDecks(s, getChosenDeckIds(), [id]);
     });
     setStatus(successLine(
       <>

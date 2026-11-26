@@ -12,7 +12,7 @@ import { COMPANION_GONE, readCompanionRange } from '../../services/driveService'
 import { loadSessionAudio, fetchSyncedAudio, audioDownloadProgress, audioArrivals } from '../db';
 import { audioDownloadMode } from '../audioDownloads';
 import { fetchRemotePassage } from '../audio/remotePassage';
-import { TUNE_ANALYSER_MODULE_KEY, hasRecognisedSetting, keyOffsetOf, type Detection, type SyncedAudio, type TuneAnalyserModuleData } from '../model';
+import { analyserModuleOf, hasRecognisedSetting, keyOffsetOf, type Detection, type SyncedAudio } from '../model';
 import { followFrom, followTo, type FollowAudio } from '../scoreFollowClient';
 import { ClipControls, fmtLongTime, type ClipSessionRef } from './sessionUiShared';
 import { AbcPreview } from './abcPreview';
@@ -71,14 +71,14 @@ export interface SlicePlayer {
 /** The Drive copy of this analysis's recording, read live off the state: it
  *  arrives with a sync from the device that recorded it. */
 export function syncedAudioEntry(sessionId: string): SyncedAudio | null {
-  const mod = appState.value.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
+  const mod = analyserModuleOf(appState.value);
   return mod?.syncedAudio?.[sessionId] ?? null;
 }
 
 /** The analysis's length, which a passage read from Drive needs: asking the
  *  file would mean reading all of it. */
 function sessionDuration(sessionId: string): number {
-  const mod = appState.value.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
+  const mod = analyserModuleOf(appState.value);
   return mod?.sessions[sessionId]?.duration ?? 0;
 }
 

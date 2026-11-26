@@ -60,35 +60,37 @@ describe('decideReconcile — version regime', () => {
   });
 });
 
-describe('decideReconcile — transitional (legacy install, no version recorded)', () => {
-  const legacy = (over: Partial<ReconcileInputs> = {}) =>
+describe('decideReconcile — base known by its content stamp only (no version recorded)', () => {
+  // An upload whose answer carried no version, or a pre-redesign install
+  // (its counters seeded from the old timestamps at init).
+  const stampOnly = (over: Partial<ReconcileInputs> = {}) =>
     base({ syncedVersion: null, editSeq: 0, syncedSeq: 0, ...over });
 
-  it('content stamp equals base → none + adopt (the silent graduation every deployed install takes)', () => {
-    expect(decideReconcile(legacy())).toEqual({ action: 'none', adoptVersion: true });
+  it('content stamp equals base → none + adopt', () => {
+    expect(decideReconcile(stampOnly())).toEqual({ action: 'none', adoptVersion: true });
   });
 
-  it('graduation still happens with unsynced local edits pending', () => {
-    const d = decideReconcile(legacy({ localTs: 2000, editSeq: 1 }));
-    expect(d).toEqual({ action: 'none', adoptVersion: true });
+  it('adopted with unsynced local edits pending too (the push follows)', () => {
+    expect(decideReconcile(stampOnly({ localTs: 2000, editSeq: 1 }))).toEqual({ action: 'none', adoptVersion: true });
   });
 
-  it('drive ahead, local unchanged → apply (old behavior preserved)', () => {
-    expect(decideReconcile(legacy({ driveTs: 2000 })).action).toBe('apply');
+  it('drive moved, local unchanged → apply', () => {
+    expect(decideReconcile(stampOnly({ driveTs: 2000 }))).toEqual({ action: 'apply', adoptVersion: false });
   });
 
-  it('both ahead → conflict — the same-device shortcut is gone', () => {
-    const d = decideReconcile(legacy({ driveTs: 2000, localTs: 1500 }));
-    expect(d.action).toBe('conflict');
+  it('both moved → conflict', () => {
+    expect(decideReconcile(stampOnly({ driveTs: 2000, editSeq: 3 })).action).toBe('conflict');
   });
 
-  it('local ahead via seq only (timestamps rewound) → still conflict', () => {
-    const d = decideReconcile(legacy({ driveTs: 2000, localTs: 900, editSeq: 3 }));
-    expect(d.action).toBe('conflict');
+  it('a REVERTED Drive file (older stamp) registers as moved, as it does under versions', () => {
+    // The transitional rule (until 2026-11-26) compared the stamps and said
+    // 'none' here — keeping local and later pushing it over the revert.
+    expect(decideReconcile(stampOnly({ driveTs: 500 })).action).toBe('apply');
+    expect(decideReconcile(stampOnly({ driveTs: 500, editSeq: 1 })).action).toBe('conflict');
   });
 
-  it('drive behind base (legacy revert) → none, as before the redesign (no NEW regression)', () => {
-    expect(decideReconcile(legacy({ driveTs: 500 })).action).toBe('none');
+  it('the local wall clock is not read: a stamp ahead with no counted edit is not a local move', () => {
+    expect(decideReconcile(stampOnly({ driveTs: 2000, localTs: 5000 })).action).toBe('apply');
   });
 });
 

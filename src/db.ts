@@ -94,7 +94,8 @@ export async function getAllUserIds(): Promise<string[]> {
   return _db.getAllKeys(USER_STORE) as Promise<string[]>;
 }
 
-/** Read from the legacy single-key store for one-time migration. */
+/** Read from the legacy single-key store for one-time migration.
+ *  LEGACY until 2026-12-01 — the single-blob IndexedDB store, not written since 2026-06-01 (d8d6257): this and deleteLegacyState, with main.ts's boot branch. */
 export async function loadLegacyState(): Promise<Record<string, unknown> | undefined> {
   try {
     return await _db.get(LEGACY_STORE, LEGACY_KEY);

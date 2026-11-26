@@ -7,7 +7,7 @@ import { TrashIcon, StarIcon, PlusIcon, LibraryIcon, ChevronDownIcon } from '../
 import { IconButton, Metric, EmptyState } from '../components/ui';
 import { confirmModal, confirmModalWithOption } from '../components/modal';
 import { CustomSelect } from '../components/customSelect';
-import { findParentFolder, orphanedCardsAfterDeckRemoval, folderPath, moveDeckToParent } from '../services/deckService';
+import { findParentFolder, orphanedCardsAfterDeckRemoval, folderPath, moveDeckToParent, addCardsToDecks } from '../services/deckService';
 import { removeCards } from '../services/cardService';
 import { deckAvailability, cardAvailability, effectiveImportance, isAvailable, deckStability, deckEase, replayFSRS, retentionWindowDays } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
@@ -328,7 +328,7 @@ export function DeckView({ deckId }: { deckId: string }) {
               placeholder={t('deck.quickLink.placeholder')}
               noMatch={t('deck.quickLink.noMatch')}
               eligible={(c) => !alreadyInDeck.has(c.id)}
-              onPick={(card) => mutate(s => { s.decks[deckId]!.entries.push({ cardId: card.id }); })}
+              onPick={(card) => mutate(s => { addCardsToDecks(s, [deckId], [card.id]); })}
             />
           </div>
           <IconButton

@@ -12,6 +12,7 @@ import { DeckPickerHost } from './components/deckSelector';
 import { WelcomePrefs } from './components/welcomePrefs';
 import { GithubIcon, CloudDownIcon, UpdateIcon, InstallIcon, GooglePlayIcon, PlusIcon } from './components/icons';
 import { InlineStatus } from './components/ui';
+import { initialsOf } from './components/initials';
 import { WelcomeTour } from './components/welcomeTour';
 import { webAppButtonAction, openPlayStore } from './components/installOffer';
 import { isNative } from './native/platform';
@@ -410,9 +411,6 @@ export function mountApp(root: HTMLElement): void {
 }
 
 // ── User selector ─────────────────────────────────────────────────────────────
-
-const initialsOf = (name: string) =>
-  name.split(/[\s-]+/).slice(0, 2).map(w => w[0] ?? '').join('').toUpperCase() || '?';
 
 /** The source link and the version, at the foot of the welcome screen.
  *  No privacy/terms links here: index.html's static footer carries them on

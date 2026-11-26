@@ -8,6 +8,7 @@ import { deleteLocalSessionData, localSessionAudioStats, freeableSessionAudio, f
 import { deleteLocalAttachmentData, localAttachmentBytes } from '../services/attachmentDb';
 import { TrashIcon, ResetIcon, HelpIcon, ExpandIcon, CollapseIcon, CrossIcon, PlusIcon, MinusIcon, UploadIcon, ImportTrayIcon, studyIconSvg } from './icons';
 import { IconButton, Switch } from './ui';
+import { initialsOf } from './initials';
 import { confirmModal, closeModal, closeAllModals, showModal, renderModalBody, alertModal, MODAL_BACKDROP, MODAL_TITLE_CLASS, MODAL_W } from './modal';
 import { getZoom, zoomIn, zoomOut, canZoomIn, canZoomOut, modalMaxH, modalMaxW, zoomWorks } from '../services/zoomService';
 import { playbackVolumePercent, setPlaybackVolumePercent, DEFAULT_VOLUME_PERCENT } from '../services/playbackVolume';
@@ -40,9 +41,6 @@ import { registerOverlay } from './overlayStack';
 import { fmtDateTime, dateFormatOf, DATE_FORMATS, type DateFormat } from '../services/dateFormat';
 
 // ── Profiles ──────────────────────────────────────────────────────────────────
-
-const initialsOf = (name: string) =>
-  name.split(/[\s-]+/).slice(0, 2).map(w => w[0] ?? '').join('').toUpperCase() || '—';
 
 function ProfileRow({ ctx, pid, name, canDelete }: { ctx: AppContext; pid: string; name: string; canDelete: boolean }) {
   const [editing, setEditing] = useState(false);

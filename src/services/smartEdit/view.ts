@@ -1,7 +1,7 @@
 import type { AppState, Attachment, Card } from '../../types';
 import { resolveCardRef } from '../cardRefService';
 import { findParentFolder } from '../deckService';
-import { TUNE_ANALYSER_MODULE_KEY, type Analysis, type Detection, type TuneAnalyserModuleData } from '../../session/model';
+import { analyserModuleOf, type Analysis, type Detection } from '../../session/model';
 import { folderPathOf, parentFolderOf, sessionTreeOf } from '../../session/sessionTree';
 import { detectionReviewId } from '../../session/reviewLink';
 import { cardOfTuneId } from '../../session/detections';
@@ -71,7 +71,7 @@ function displayed(name: string): string {
  *  analysis screen itself does. Field defaults are left out to keep a large
  *  library small: no `confirmed`, `liked` or `manual` means false. */
 function analysesView(state: AppState): AnalysisView[] {
-  const mod = state.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
+  const mod = analyserModuleOf(state);
   const sessions = Object.values(mod?.sessions ?? {}).filter(a => a.status !== 'recording');
   if (sessions.length === 0) return [];
   const tree = sessionTreeOf(state);

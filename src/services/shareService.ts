@@ -62,7 +62,8 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 
 /** A ticket for `size` bytes, once it is granted. Null when the server
  *  predates the queue (no /share/ticket route): the upload then goes straight
- *  in, as it always did. */
+ *  in, as it always did.
+ *  LEGACY until 2027-05-16 — a share server without the queue, replaced 2026-11-16 (b3e0255): the 404 → null fallback (the server's ticketless path lives in irishtuneinfo-scraper-api, with the same date). */
 async function takeTicket(size: number, options: UploadShareOptions): Promise<string | null> {
   const { signal, onWaiting } = options;
   let res = await fetch(`${BASE}/share/ticket?size=${size}`, { method: 'POST', signal });

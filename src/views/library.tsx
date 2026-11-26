@@ -27,7 +27,7 @@ import type { ItiMappingDb, ItiMappingEntry } from '../services/itiMappingDb';
 import { useContextMenu } from '../components/contextMenu';
 import { showStudyModal } from '../components/studyModal';
 import { showNewCardModal } from '../components/theSessionImport';
-import { deckIdsByCard } from '../services/deckService';
+import { deckIdsByCard, addCardsToDecks } from '../services/deckService';
 import { knownChips } from '../components/filterChips';
 import { coveredByTagGroups, dropTagNodeChips, renameTagNodeChips, tagChipValues, tagDisplay, tagLabel, tagNodeExists, tagTree } from '../services/tagGroups';
 import { deckChipKnown, deckChipSection } from '../components/deckChips';
@@ -733,13 +733,7 @@ export function LibraryView() {
       label: t('library.batch.addToDecks'),
       onClick: () => showDeckPickerModal(
         'library.addToDecks.title', 'library.addToDecks.confirm', addEligible,
-        (deckIds) => mutate(s => {
-          for (const deckId of deckIds) {
-            const deck = s.decks[deckId]; if (!deck) continue;
-            for (const cardId of selectedArr)
-              if (!deck.entries.some(e => e.cardId === cardId)) deck.entries.push({ cardId });
-          }
-        }),
+        (deckIds) => mutate(s => { addCardsToDecks(s, deckIds, selectedArr); }),
         t('library.deckInfo.add', { n: selectedArr.length }),
       ),
     },

@@ -7,7 +7,7 @@ import { fromAttrs, originOf } from '../../components/navOrigin';
 import { CustomSelect } from '../../components/customSelect';
 import { FilterSection, FilterGroup, ReviewedRangeSection, cycleFilter, type FilterMap, type FilterTreeNode } from '../../components/filterSection';
 import { deckChipKnown, deckChipSection } from '../../components/deckChips';
-import { deckIdsByCard } from '../../services/deckService';
+import { deckIdsByCard, addCardsToDecks } from '../../services/deckService';
 import { tagsWithTunes, setsMatchTuneTags } from '../../services/cardRefService';
 import { createLongPressHandlers } from '../../components/longPress';
 import { useContextMenu } from '../../components/contextMenu';
@@ -663,14 +663,7 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
         };
       });
       const alreadyThere: StepOutcome = { status: 'skipped', reason: t('sessions.batch.skip.alreadyInDecks') };
-      const fileInto = (s: AppState, cardId: string): boolean => {
-        let changed = false;
-        for (const deckId of deckIds) {
-          const deck = s.decks[deckId];
-          if (deck && !deck.entries.some(e => e.cardId === cardId)) { deck.entries.push({ cardId }); changed = true; }
-        }
-        return changed;
-      };
+      const fileInto = (s: AppState, cardId: string): boolean => addCardsToDecks(s, deckIds, [cardId]);
       const commit: BatchCommit = { write: async (ran) => {
         const outcomes = new Map<number, StepOutcome>();
         await mutateWithRule(s => {

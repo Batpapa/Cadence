@@ -15,10 +15,10 @@
 //    syncedSeq) — same-device, monotonic, immune to clock changes and to the
 //    old bug where a successful upload rewound the local timestamp over edits
 //    made during the upload.
-//  - When only pre-redesign bookkeeping exists (timestamps, no version), the
-//    old rules apply for that one read so existing installs migrate without a
-//    spurious conflict — and graduate to version-based tracking at their next
-//    successful sync (see `adoptVersion`).
+//  - With no version recorded, the content stamp at the last sync point (when
+//    there is one) stands in for it — equality only, never a clock comparison.
+//    With neither, nothing proves how the copies are related: everything but
+//    a never-modified local is the user's call.
 //  - Divergence is NEVER resolved silently. The old "same device wrote Drive →
 //    newer timestamp wins" shortcut is gone: last writer says nothing about
 //    lineage (a stale tab writes later yet carries older data).
@@ -33,9 +33,12 @@ export interface ReconcileInputs {
   /** File version recorded at our last sync point — null before first
    *  version-based sync (fresh connect, or an install predating the redesign). */
   syncedVersion: string | null;
-  /** Legacy merge base: content timestamp at last sync (0 = none recorded). */
+  /** Content timestamp at last sync (0 = none recorded): what tells a phantom
+   *  version bump from a real write, and the base itself when no version was
+   *  recorded. */
   syncedTs: number;
-  /** Legacy local-edit stamp (wall clock of THIS device). */
+  /** Local-edit stamp (wall clock of THIS device): with no base, whether
+   *  local has lived at all. */
   localTs: number;
   /** Local edit counter / its value at last sync. */
   editSeq: number;
@@ -45,8 +48,8 @@ export interface ReconcileInputs {
 export interface ReconcileDecision {
   action: 'none' | 'apply' | 'conflict';
   /** True when this read PROVES local and Drive are the same content, so the
-   *  caller should record driveVersion as the new base (legacy installs
-   *  graduating to version-based tracking without a sync round trip). */
+   *  caller should record driveVersion as the new base (a phantom version
+   *  bump, or a base known by its content stamp only — below). */
   adoptVersion: boolean;
 }
 
@@ -77,19 +80,21 @@ export function decideReconcile(i: ReconcileInputs): ReconcileDecision {
   }
 
   if (i.syncedTs > 0) {
-    // ── Transitional: pre-redesign install, timestamps only ──
-    // Content stamp equal to our base proves Drive still holds exactly what we
-    // last synced — in sync, adopt the current version as base silently. This
-    // is the path virtually every existing install takes on its first boot
-    // after the redesign deploys: no modal, no behavior change.
+    // ── Base known by its content stamp only ──
+    // No version recorded, but the content last agreed on is known by its
+    // `_lastModified`: an upload whose answer carried no usable version
+    // (recordSyncPoint drops the version rather than keep a stale one), or an
+    // install from before the 2026-08-31 redesign. The same rule as above with
+    // the stamp in the version's place — no clock is compared, only equality:
+    // an equal stamp proves Drive still holds exactly that content (in sync,
+    // adopt its version); any other stamp means Drive moved, a revert to an
+    // older stamp included. Local's side is the edit counter, as above.
+    //
+    // Until 2026-11-26 this was a "transitional" branch that compared the
+    // stamps and the local wall clock as the pre-redesign code did; the clock
+    // comparisons went, the stamp's proof stays — it is not transitional.
     if (i.driveTs === i.syncedTs) return { action: 'none', adoptVersion: true };
-    // Otherwise fall back to the old stamp comparison for this one read (same
-    // risks as the old code, no NEW regression — it graduates at the next
-    // successful sync). The same-device shortcut is deliberately absent.
-    const driveMoved = i.driveTs > i.syncedTs;
-    const legacyLocalMoved = i.localTs > i.syncedTs || localMoved;
-    if (!driveMoved) return { action: 'none', adoptVersion: false };
-    if (!legacyLocalMoved) return { action: 'apply', adoptVersion: false };
+    if (!localMoved) return { action: 'apply', adoptVersion: false };
     return { action: 'conflict', adoptVersion: false };
   }
 

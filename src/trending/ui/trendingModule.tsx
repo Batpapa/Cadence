@@ -16,6 +16,7 @@ import { appState, mutate, navigate, replaceRoute } from '../../store';
 import { timeAgo, externalSourceLink } from '../../utils';
 import { Sparkline } from './sparkline';
 import { mutateWithRule } from '../../services/attachmentStore';
+import { addCardsToDecks } from '../../services/deckService';
 import { DateField } from '../../components/dateField';
 
 export interface TrendingRouteParams {
@@ -126,10 +127,7 @@ function TrendingRow({ row, rank, gainMode, getTune, getPinnedDeckIds, library }
         const existing = findByExternalId(externalId, s.cards);
         const id = existing?.id ?? card.id;
         if (!existing) s.cards[id] = card;
-        for (const deckId of deckIds) {
-          const deck = s.decks[deckId];
-          if (deck && !deck.entries.some(e => e.cardId === id)) deck.entries.push({ cardId: id });
-        }
+        addCardsToDecks(s, deckIds, [id]);
       });
       setActionError(false);
     } catch {
@@ -143,12 +141,7 @@ function TrendingRow({ row, rank, gainMode, getTune, getPinnedDeckIds, library }
     if (!known) return;
     setActionBusy(true);
     try {
-      await mutate(s => {
-        for (const deckId of deckIds) {
-          const deck = s.decks[deckId];
-          if (deck && !deck.entries.some(e => e.cardId === known.id)) deck.entries.push({ cardId: known.id });
-        }
-      });
+      await mutate(s => { addCardsToDecks(s, deckIds, [known.id]); });
     } finally {
       setActionBusy(false);
     }

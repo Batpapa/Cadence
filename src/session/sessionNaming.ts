@@ -1,6 +1,6 @@
 import { t } from '../services/i18nService';
 import { fmtDate, fmtTime, fmtDateTime } from '../services/dateFormat';
-import { TUNE_ANALYSER_MODULE_KEY, type Analysis, type TuneAnalyserModuleData } from './model';
+import { analyserModuleOf, type Analysis } from './model';
 
 // ── What a session is called ─────────────────────────────────────────────────
 // A session's name is DATA, not a rendering. It is written once, when the
@@ -182,7 +182,7 @@ const filled = (value: unknown): string | null => typeof value === 'string' && v
 /** The templates stored in the settings, or null for the usual name. Anything
  *  but a string with something in it reads as none. */
 export function nameTemplateSetting(user: { modules?: Record<string, unknown> }): NameTemplates | null {
-  const mod = user.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
+  const mod = analyserModuleOf(user);
   const template = filled(mod?.nameTemplate);
   return template ? { template, noFolder: filled(mod?.nameTemplateNoFolder) } : null;
 }

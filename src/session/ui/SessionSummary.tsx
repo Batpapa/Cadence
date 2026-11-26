@@ -16,10 +16,12 @@ import {
   audioDownloadProgress, audioArrivals, downloadSyncedAudioOnce, keepSyncedAudioHere,
 } from '../db';
 import { isDriveConnected } from '../../services/driveService';
-import type { Analysis, Detection, SyncedAudio, TuneAnalyserModuleData } from '../model';
-import { TUNE_ANALYSER_MODULE_KEY } from '../model';
+import type { Analysis, Detection, SyncedAudio } from '../model';
+import { analyserModuleOf } from '../model';
 import { alternatePickFields, withManualAlternate, manualAlternateRemovalFields, insertionIndex } from '../model';
 import { samePlayedPitch } from '../recognition/pitchSplit';
+import { bucketOf } from '../recognition/viterbiSegmenter';
+import { DETECTION_TEMPORAL_CONFIG } from '../recognition/detectionTemporalConfig';
 import { DetectionCard, type DetectionCardOptions } from './DetectionCard';
 import { DetectionSeekBar } from './DetectionSeekBar';
 import { showDetectionTempo } from './LiveTempo';
@@ -259,7 +261,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
    *  is already open. A mount-time snapshot left the recording looking absent
    *  until the page was reloaded, for a feature whose whole point is that the
    *  other device can hear it. */
-  const modData = appState.value.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
+  const modData = analyserModuleOf(appState.value);
   const synced: SyncedAudio | null = modData?.syncedAudio?.[session.id] ?? null;
   /** An upload, removal or download in flight — all three touch the network and
    *  none may be started twice. */
@@ -1138,7 +1140,9 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
             prev.end = ann.end;
             prev.evidence = [...prev.evidence, ...ann.evidence];
             prev.confidence = Math.max(prev.confidence, ann.confidence);
-            prev.bucket = prev.confidence >= 0.7 ? 'high' : prev.confidence >= 0.5 ? 'medium' : 'low';
+            // The recogniser's own thresholds: a copy written here on 2026-07-16
+            // (0.7/0.5) never followed them when they moved.
+            prev.bucket = bucketOf(prev.confidence, DETECTION_TEMPORAL_CONFIG);
             // The note of the one merged away is the user's writing: kept,
             // under the survivor's, rather than lost with the detection.
             if (ann.notes) prev.notes = prev.notes ? `${prev.notes}\n\n${ann.notes}` : ann.notes;

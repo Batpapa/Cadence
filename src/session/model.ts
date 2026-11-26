@@ -415,6 +415,29 @@ export interface SyncedAudio {
 
 export const TUNE_ANALYSER_MODULE_KEY = 'tune-analyser';
 
+/** Anything that carries the modules — AppState, or the plain blob a restore
+ *  or a discarded Drive copy is read as. */
+type WithModules = { modules?: Record<string, unknown> };
+
+/** The analyser's slice of `user`, as stored: undefined for someone who has
+ *  never used the analyser. The one cast of `modules['tune-analyser']` —
+ *  types.ts types the modules loosely, and promised each module its own
+ *  typed accessor; this is the analyser's. */
+export function analyserModuleOf(user: WithModules): TuneAnalyserModuleData | undefined {
+  return user.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
+}
+
+/** Edits the analyser's slice of `user` — a draft inside mutate() — creating
+ *  it as `{ sessions: {} }` when absent, and attaching it back. What `fn`
+ *  returns is handed on. */
+export function editAnalyserModule<T>(user: WithModules, fn: (mod: TuneAnalyserModuleData) => T): T {
+  user.modules ??= {};
+  const mod = analyserModuleOf(user) ?? { sessions: {} };
+  const out = fn(mod);
+  user.modules[TUNE_ANALYSER_MODULE_KEY] = mod;
+  return out;
+}
+
 // ── Recognition window results (worker → Viterbi detector) ─────────────────────
 
 export interface WindowCandidate {

@@ -28,7 +28,7 @@ import {
 } from '../audioDownloads';
 import { importSharedSession, importSessionFile } from '../../services/sessionShareService';
 import { isDriveConnected } from '../../services/driveService';
-import { TUNE_ANALYSER_MODULE_KEY, type Analysis, type TuneAnalyserModuleData } from '../model';
+import { editAnalyserModule, analyserModuleOf, type Analysis } from '../model';
 import { detectionsOnCards, setDetectionOn } from '../detections';
 import { appState, mutate, getContext } from '../../store';
 import { listLiveBackups, restoreLiveBackup, discardLiveBackup, type LiveBackupEntry } from '../liveBackup';
@@ -626,12 +626,10 @@ function RecognitionIndexesBlock() {
   const [hintOpen, setHintOpen] = useState(false);
   const choices = recognitionIndexesOf(appState.value);
   const save = (next: RecognitionIndexChoice[]) => {
-    void mutate(s => {
-      const m = (s.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined) ?? { sessions: {} };
+    void mutate(s => editAnalyserModule(s, m => {
       // Written whole, both values of every switch (see the field's doc).
       m.recognitionIndexes = storedRecognitionIndexes(s, next);
-      s.modules = { ...(s.modules ?? {}), [TUNE_ANALYSER_MODULE_KEY]: m };
-    });
+    }));
   };
   const move = (from: number, to: number) => {
     const next = [...choices];
@@ -782,7 +780,7 @@ function autoDownloadLine(s: AutoDownloadStatus | null, progress: Readonly<Recor
   if (!s) return null;
   const left = { count: s.remaining, size: formatBytes(s.bytes) };
   if (s.current) {
-    const name = (appState.value.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined)
+    const name = analyserModuleOf(appState.value)
       ?.sessions?.[s.current]?.name ?? '';
     return t('sessions.download.status.downloading', { name, percent: Math.round((progress[s.current] ?? 0) * 100), ...left });
   }
@@ -904,7 +902,7 @@ function autoUploadLine(states: Readonly<Record<string, AutoUploadState>>): stri
  *  `syncAudioByDefault` — a user's recordings are protected on all their
  *  devices or none; the network it may use is this device's (db.ts). */
 function AudioUploadsBlock() {
-  const mod = appState.value.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
+  const mod = analyserModuleOf(appState.value);
   const auto = mod?.syncAudioByDefault ?? SYNC_AUDIO_BY_DEFAULT;
   const line = auto ? autoUploadLine(autoUploadState.value) : null;
   return (
@@ -1097,14 +1095,12 @@ function DriveBackupsRow() {
  *  and the panel closing, come through here. */
 function setNameTemplates(main: string, noFolder: string): void {
   const a = main.trim() === defaultNameTemplate() ? '' : main.trim(), b = noFolder.trim();
-  const current = appState.value.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
+  const current = analyserModuleOf(appState.value);
   if ((current?.nameTemplate ?? '') === a && (current?.nameTemplateNoFolder ?? '') === b) return;
-  void mutate(s => {
-    const m = (s.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined) ?? { sessions: {} };
+  void mutate(s => editAnalyserModule(s, m => {
     if (a) m.nameTemplate = a; else delete m.nameTemplate;
     if (b) m.nameTemplateNoFolder = b; else delete m.nameTemplateNoFolder;
-    s.modules = { ...(s.modules ?? {}), [TUNE_ANALYSER_MODULE_KEY]: m };
-  });
+  }));
 }
 
 /** What is wrong with a template, said under its field. Never blocking: a
@@ -1139,7 +1135,7 @@ type TemplateInputKey = 'main' | 'noFolder';
  *  shows the usual name's template greyed, as its placeholder — automatic
  *  until something is typed, like an embedded link's name (2026-10-16). */
 function NameTemplateBlock() {
-  const mod = appState.value.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
+  const mod = analyserModuleOf(appState.value);
   const [main, setMain] = useState(mod?.nameTemplate ?? '');
   const [noFolder, setNoFolder] = useState(mod?.nameTemplateNoFolder ?? '');
   /** The field the list of fields inserts into: the one last focused. */
@@ -1241,7 +1237,7 @@ function NameTemplateBlock() {
 function SessionSettingsBody() {
   // Read straight off appState rather than through db.ts's async accessors:
   // this component already re-renders on every state change.
-  const mod = appState.value.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
+  const mod = analyserModuleOf(appState.value);
   // Checked against the folder the moment this panel opens, because this is
   // where the backlog below is READ. Until now it reported what the library believed:
   // a user who emptied their Drive by hand was told 17 recordings were safe
@@ -1263,13 +1259,11 @@ function SessionSettingsBody() {
         label={t('sessions.detectionsOnCards')}
         hint={t('sessions.detectionsOnCards.hint')}
         onToggle={(next) => {
-          void mutate(s => {
-            const m = (s.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined) ?? { sessions: {} };
+          void mutate(s => editAnalyserModule(s, m => {
             // Written only to turn it OFF — absence is the default here as
             // everywhere else in this codebase.
             if (next) delete m.detectionsOnCards; else m.detectionsOnCards = false;
-            s.modules = { ...(s.modules ?? {}), [TUNE_ANALYSER_MODULE_KEY]: m };
-          });
+          }));
         }}
       />
 
@@ -1279,11 +1273,9 @@ function SessionSettingsBody() {
         label={t('sessions.setDetection')}
         hint={t('sessions.setDetection.hint')}
         onToggle={(next) => {
-          void mutate(s => {
-            const m = (s.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined) ?? { sessions: {} };
+          void mutate(s => editAnalyserModule(s, m => {
             if (next) delete m.experimentalSets; else m.experimentalSets = false;
-            s.modules = { ...(s.modules ?? {}), [TUNE_ANALYSER_MODULE_KEY]: m };
-          });
+          }));
         }}
       />
 
