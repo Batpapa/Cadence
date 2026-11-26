@@ -98,6 +98,7 @@ propres. Les 2 warnings de taille de bundle au build sont normaux et préexistan
 | `src/views/` | écrans (accueil, bibliothèque, carte, révision, modules) |
 | `src/session/` | analyseur de sessions : audio, reconnaissance, UI, stockage propre |
 | `src/trending/` | module tendances |
+| `transcriptor/` | décodeur de notes (transcription cachée, reconnaissance expérimentale) : sources TS + Rust, banc, `JOURNAL.md`. `src/session/recognition/transcriptor.ts` en est **généré** (`node transcriptor/bench/bundle.js`), ne jamais l'éditer à la main ; le WASM livré est dans `vendor/cadence-transcriptor/` |
 | `src/i18n/` | `en.json` + `fr.json`, à garder synchrones |
 | `src/types.ts` | modèle de données, et les commentaires qui disent ce qui est gelé |
 

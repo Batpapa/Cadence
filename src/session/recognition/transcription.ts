@@ -6,7 +6,7 @@
 // the ABC text.
 //
 // Every choice below was measured (research records outside the repo:
-// transcription-bench/JOURNAL.md, cadence-transcriptor/JOURNAL.md). Judges: the tuneset corpus
+// transcription-bench/JOURNAL.md, transcriptor/JOURNAL.md). Judges: the tuneset corpus
 // (Beauguitte, Duggan & Kelleher, ISMIR 2016 — the only public Irish recordings annotated note
 // by note: 13 session recordings, 2 solo flutes), 170 tunes of Cadence's annotated sessions
 // against their TheSession settings (relative only: people do not play the setting), a

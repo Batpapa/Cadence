@@ -3,10 +3,10 @@ import { useAnalysis, type AnalysisOptions, type Peaks } from './transcriptor';
 import { supportsSimd } from './folkfriendInit';
 
 // ── The transcription's spectral analysis in WebAssembly ─────────────────────
-// transcriptor.ts's analysis, the same steps compiled from Rust (cadence-transcriptor/rust,
+// transcriptor.ts's analysis, the same steps compiled from Rust (transcriptor/rust,
 // built with wasm-pack --target web, a SIMD build and a scalar one, as FolkFriend's): twice
 // as fast, the notes it leads to 99.7 % the same as the TypeScript one's on session
-// recordings (within float rounding; cadence-transcriptor/bench/native-parity.js). Loaded
+// recordings (within float rounding; transcriptor/bench/native-parity.js). Loaded
 // once, SIMD where the browser has it; if neither build loads, the TypeScript analysis stays.
 
 let ready: Promise<boolean> | null = null;

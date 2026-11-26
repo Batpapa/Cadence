@@ -26,7 +26,9 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify({ version: '0000.00.00', commit: 'test', dirty: false, build: 'test' }),
   },
   test: {
-    exclude: [...configDefaults.exclude, 'experiments/**'],
+    // transcriptor/: the note decoder's sources (bundled into src/session/recognition/transcriptor.ts,
+    // tested there) and its bench, whose caches run to thousands of files — not walked.
+    exclude: [...configDefaults.exclude, 'experiments/**', 'transcriptor/**'],
     execArgv: nodeDefinesLocalStorage ? ['--no-experimental-webstorage'] : [],
   },
 });

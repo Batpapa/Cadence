@@ -56,6 +56,10 @@ export interface RecognitionOptions {
   /** Follow the tempo of the audio too (liveTempo.ts): a reading a second of
    *  signal, through `onTempo`. */
   tempo?: boolean;
+  /** Every window transcribed by cadence-transcriptor too, the two queries
+   *  averaged (engineFusion.ts) — the hidden experimental recognition, for file
+   *  imports only. */
+  transcriptor?: boolean;
 }
 
 export class RecognitionClient implements RecognitionSink {
@@ -127,7 +131,7 @@ export class RecognitionClient implements RecognitionSink {
     // loads the index. A failure to gather sends none rather than stalling.
     const sources = recognitionSources?.() ?? null;
     this.send({
-      type: 'init', sampleRate, hopS: options.hopS, tempo: options.tempo,
+      type: 'init', sampleRate, hopS: options.hopS, tempo: options.tempo, transcriptor: options.transcriptor,
       cards: sources?.cards ?? false, theSession: sources?.theSession ?? true, sourceOrder: sources?.sourceOrder ?? [],
     });
     if (sources?.cards) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { transcribeNotes, asClassNotes, resample, RATE, type Note } from './transcriptor';
+import { transcribeNotes, asClassNotes, recognitionContour, resample, RATE, type Note } from './transcriptor';
 
 /** Harmonic tones (MIDI pitch, start s, length s): 6 partials falling as 1/h, a 5 ms attack,
  *  a 10 ms release, a little noise. */
@@ -53,6 +53,27 @@ describe('transcribeNotes', () => {
     const loudest = (n: Note) => n.octaves.indexOf(Math.max(...n.octaves));
     // A3 = 48 + 9 + 12 x 0, E5 = 48 + 4 + 12 x 2
     expect(notes.map(loudest)).toEqual([0, 2]);
+  });
+});
+
+describe('recognitionContour', () => {
+  it('writes a window as FolkFriend\'s query, one pitch class a quaver', () => {
+    // a reel's bar twice over at 110 crotchets a minute: quavers, then a crotchet
+    const bar: [number, number][] = [[62, 1], [66, 1], [69, 1], [66, 1], [62, 1], [66, 1], [69, 2]];
+    const q = 60 / 110 / 2;
+    const tune: [number, number, number][] = [];
+    let t = 0.3;
+    for (let r = 0; r < 4; r++) for (const [p, n] of bar) { tune.push([p, t, n * q]); t += n * q; }
+    const contour = recognitionContour(synth(tune, t + 0.3), RATE);
+    // D F# A: c = 'a' + 2, F# 'g', A 'j'; the crotchet as two quavers of its class
+    expect(contour).toBe('cgjgcgjj'.repeat(4));
+  });
+
+  it('gives nothing to query in silence', () => {
+    // (white noise alone does give ghost notes — the voicing is read against the window's
+    // own level; on the bar-noise recording of the bench, averaged with FolkFriend's, no
+    // detection all the same)
+    expect(recognitionContour(new Float32Array(3 * RATE), RATE)).toBe('');
   });
 });
 

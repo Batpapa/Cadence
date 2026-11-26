@@ -161,6 +161,7 @@
   "about.title": "About Cadence",
   "about.info": "Information",
   "about.devMode": "developer mode",
+  "about.experimentalRecognition": "experimental recognition",
   "transcribe.title": "Transcription",
   "transcribe.working": "Transcribing {name}…",
   "transcribe.tooLong": "This recording lasts {seconds} min: transcription takes {max} at most.",

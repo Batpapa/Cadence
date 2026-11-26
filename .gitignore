@@ -33,3 +33,11 @@ experiments/ranking-study/v3/knobs*/
 experiments/ranking-study/v3/prod-default-check/
 experiments/ranking-study/v3/install-backup/
 experiments/ranking-study/v3/e5-backup-before-perT/
+
+# The note decoder (transcriptor/, bundled into src/session/recognition/transcriptor.ts):
+# its bench caches (~14 GB of analyses, rebuilt by the bench scripts), the Rust build, and
+# wasm-pack's outputs (rebuilt as transcriptor/JOURNAL.md says; the shipped ones are in
+# vendor/cadence-transcriptor/).
+transcriptor/out/
+transcriptor/rust/target/
+transcriptor/rust/pkg-*/

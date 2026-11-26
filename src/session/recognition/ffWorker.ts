@@ -8,6 +8,9 @@ import { kvGet, kvSet } from '../db';
 import { IncrementalViterbiSegmenter } from './viterbiSegmenter';
 import { PlayedPitch } from './playedPitch';
 import { pitchClassesForDisplay } from './contourShift';
+import { recognitionContour, resample, RATE } from './transcriptor';
+import { initTranscriptor } from './transcriptorInit';
+import { fuseCandidates } from './engineFusion';
 import { normalizeDisplayName } from '../../utils';
 import { signedKeyOffset, type WindowResult, type WindowCandidate, type WindowDebugFeatures, type NoteAndTempoFeatures, type DetectionEvent } from '../model';
 import { TempoTracker, type TempoReading } from '../liveTempo';
@@ -69,7 +72,7 @@ export type FFWorkerRequest =
    *  message follows, to be merged before the index loads; `theSession` —
    *  TheSession's index, loaded (downloaded the first time) only when on;
    *  `sourceOrder` — the indexes' sources in the order that wins ties. */
-  | { type: 'init'; sampleRate: number; hopS?: number; tempo?: boolean; cards: boolean; theSession: boolean; sourceOrder: string[] }
+  | { type: 'init'; sampleRate: number; hopS?: number; tempo?: boolean; transcriptor?: boolean; cards: boolean; theSession: boolean; sourceOrder: string[] }
   /** The user's tune cards (cardIndex.ts), once the page has gathered them. */
   | { type: 'cards'; tunes: CardIndexTune[] }
   | { type: 'worklet-port'; port: MessagePort }
@@ -106,6 +109,10 @@ let segmenter = new IncrementalViterbiSegmenter(hopS);
 // The candidates' played pitch (playedPitch.ts), from the loaded index's
 // settings — one per index load, it caches the tunes it has met.
 let playedPitch: PlayedPitch | null = null;
+/** The hidden experimental recognition (experimentalRecognition.ts): every
+ *  window transcribed by cadence-transcriptor too, the two queries averaged
+ *  (engineFusion.ts). Set by `init`, file imports only. */
+let withTranscriptor = false;
 
 // Ring buffer holding the last ANALYSIS_WINDOW_S seconds (plus slack).
 let ring: Float32Array = new Float32Array(0);
@@ -273,9 +280,14 @@ async function mergeCardIndex(indexData: { settings: Record<string, unknown>; al
   }
 }
 
-async function handleInit(sr: number, hop: number | undefined, tempo: boolean | undefined, theSession: boolean, sourceOrder: string[]): Promise<void> {
+async function handleInit(sr: number, hop: number | undefined, tempo: boolean | undefined, transcriptor: boolean | undefined, theSession: boolean, sourceOrder: string[]): Promise<void> {
   sampleRate = sr;
   hopS = hop ?? ANALYSIS_HOP_S;
+  withTranscriptor = !!transcriptor;
+  if (withTranscriptor) {
+    const native = await initTranscriptor();
+    console.info(`[recognition] reconnaissance expérimentale : FolkFriend + cadence-transcriptor (${native ? 'WebAssembly' : 'TypeScript'})`);
+  }
   // The SIMD build where the browser has it (folkfriendInit.ts).
   const usingSimd = await initFolkFriend();
   // Which build loaded is otherwise invisible: the bundler hashes both
@@ -413,6 +425,13 @@ function queryContour(f: FolkFriendWASM, contour: string, tuning: number | undef
   return mapCandidates(raw.slice(0, TOP_N_CANDIDATES), tuning);
 }
 
+/** The window transcribed by cadence-transcriptor (at the rate it was measured
+ *  at), queried like FolkFriend's contour; empty when it heard too few notes. */
+function transcriptorCandidates(f: FolkFriendWASM, pcm: Float32Array, tuning: number | undefined): WindowCandidate[] {
+  const contour = recognitionContour(sampleRate === RATE ? pcm : resample(pcm, sampleRate, RATE), RATE);
+  return contour ? queryContour(f, contour, tuning) : [];
+}
+
 /** Feed a PCM signal into FolkFriend and return the analysis of it. */
 function analyzeSignal(pcm: Float32Array, tStart: number, tEnd: number): { result: WindowResult; abc: string | null } {
   const f = ff!;
@@ -428,7 +447,13 @@ function analyzeSignal(pcm: Float32Array, tStart: number, tEnd: number): { resul
   }
 
   const rawDebug = JSON.parse(f.transcribe_pcm_buffer_debug()) as RawTranscribeDebug;
+  // The experimental recognition's own query (engineFusion.ts): even where
+  // FolkFriend heard no music, as measured. Its pitches read off FolkFriend's
+  // tuning, as the fused windows were.
+  const tuning = 'error' in rawDebug ? undefined : rawDebug.features?.tuning;
+  const second = withTranscriptor ? transcriptorCandidates(f, pcm, tuning) : null;
   if ('error' in rawDebug) {
+    if (second?.length) return { result: { tWindowStart: tStart, tWindowEnd: tEnd, empty: false, candidates: second }, abc: null };
     return { result: { tWindowStart: tStart, tWindowEnd: tEnd, empty: true, candidates: [] }, abc: null };
   }
   const contour = rawDebug.contour;
@@ -437,7 +462,8 @@ function analyzeSignal(pcm: Float32Array, tStart: number, tEnd: number): { resul
   // No score filtering here: the Viterbi detector applies its own candidate
   // floor (minCandidateProbability), and the calibration dump needs the
   // sub-floor scores to be tunable at all.
-  const candidates = queryContour(f, contour, features?.tuning);
+  const heard = queryContour(f, contour, features?.tuning);
+  const candidates = second ? fuseCandidates(heard, second, TOP_N_CANDIDATES) : heard;
 
   let abc: string | null = null;
   try { abc = f.contour_to_abc(pitchClassesForDisplay(contour)); } catch { /* cosmetic only */ }
@@ -560,7 +586,7 @@ function onRequest(e: MessageEvent<FFWorkerRequest>): void {
     switch (msg.type) {
       case 'init':
         if (!msg.cards) receiveCards([]);
-        void handleInit(msg.sampleRate, msg.hopS, msg.tempo, msg.theSession, msg.sourceOrder).catch(err => post({ type: 'error', message: String(err) }));
+        void handleInit(msg.sampleRate, msg.hopS, msg.tempo, msg.transcriptor, msg.theSession, msg.sourceOrder).catch(err => post({ type: 'error', message: String(err) }));
         break;
       case 'cards':
         receiveCards(msg.tunes);
