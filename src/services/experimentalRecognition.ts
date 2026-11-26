@@ -2,11 +2,11 @@ import { signal } from '@preact/signals';
 
 // ── Experimental recognition (hidden) ────────────────────────────────────────
 // (2026-11-26, the user: to be tried by two testers, hidden like the
-// transcription.) File imports transcribe every window twice — FolkFriend's and
-// cadence-transcriptor's notes — and average the two queries' scores
-// (session/recognition/engineFusion.ts, where the measurements are). Live
-// recording keeps FolkFriend alone: the second transcription costs about as much
-// again per window.
+// transcription.) File imports transcribe every window with cadence-transcriptor's
+// note decoder instead of FolkFriend's, in the regime the hidden transcription
+// writes ABC in (ffWorker.ts's analyzeWithTranscriptor; the measurements are in
+// transcriptor.ts, recognitionContour). Live recording keeps FolkFriend: a window
+// costs about twice as much.
 //
 // Switched on and off by five taps on the FolkFriend line of "About Cadence";
 // the version line then says so, the only sign it is on. Per DEVICE, in

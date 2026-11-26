@@ -7,7 +7,7 @@ const fs = require('node:fs'), path = require('node:path');
 const SRC = path.join(__dirname, '../src');
 const OUT = process.argv[2] || path.join(__dirname, '../../src/session/recognition/transcriptor.ts');
 const ORDER = ['fft.ts', 'spectrum.ts', 'salience.ts', 'onsets.ts', 'decoder.ts', 'recognition.ts'];
-const KEEP = new Set(['hear', 'transcribeNotes', 'gridNovelty', 'asClassNotes', 'resample', 'RATE', 'Note', 'Heard', 'useAnalysis', 'Peaks', 'AnalysisOptions', 'recognitionContour']);
+const KEEP = new Set(['hear', 'transcribeNotes', 'gridNovelty', 'asClassNotes', 'resample', 'RATE', 'Note', 'Heard', 'useAnalysis', 'Peaks', 'AnalysisOptions', 'recognitionContour', 'RecognitionWindow', 'classView', 'CLEAN_VIEW']);
 
 let body = '';
 for (const f of ORDER) {

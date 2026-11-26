@@ -1,19 +1,22 @@
-// The recogniser's query from these notes (2026-11-26): a 10 s window's notes made into
-// FolkFriend's contour, one pitch class a quaver ('a' = C ... 'l' = B), to be queried against
-// its index folded to pitch classes. The tempo is chosen per window as FolkFriend's contour.rs
-// does (contour_from_notes: 60-175 crotchets a minute by 5, each note rounded to whole quavers,
-// the rounding error weighed by the note's power, times a note-length model intercept - slope x
-// quavers), with two changes measured on the 18 annotated sessions (recognition-research/
-// JOURNAL.md, section 22; windows whose right tune is first, FolkFriend 91.8 %):
-//   - more cuts than for writing ABC (cutCost 1, not 2): a swallowed note costs the alignment
-//     more than an extra one — 89.8 -> 91.0 %;
-//   - a gentler note-length slope (0.2, not 0.5) — 91.0 -> 92.4 %, flat from 0.1 to 0.3;
+// The recogniser's query from these notes (2026-11-26): a 10 s window's notes — decoded in the
+// same regime as for writing ABC (decoder.ts's DEFAULTS, FolkFriend's cleaned class energies as
+// the extra view) — made into FolkFriend's contour, one pitch class a quaver ('a' = C ... 'l' =
+// B), to be queried against its index folded to pitch classes. The tempo is chosen per window as
+// FolkFriend's contour.rs does (contour_from_notes: 60-175 crotchets a minute by 5, each note
+// rounded to whole quavers, the rounding error weighed by the note's power, times a note-length
+// model intercept - slope x quavers), with two changes measured on the 18 annotated sessions
+// (recognition-research/JOURNAL.md, section 22; windows whose right tune is first):
+//   - a gentler note-length slope (0.2, not 0.5): 91.0 -> 92.4 %, flat from 0.1 to 0.3 (neutral
+//     on FolkFriend's own notes: the gain comes from our onsets' precision);
 //   - a note lasts to the next onset (at most 0.25 s past its end): rests are not symbols.
-// Final detections with the production segmenter: 686/703 tunes for 14 false positives,
-// FolkFriend 683 for 11; averaged with FolkFriend's scores, 685 for 10 and half the wrong
-// names shown briefly.
+// The tempo estimated from our onsets instead of the search: 92.0 (fixed), 93.0 (searched around
+// it), against 93.2 — not kept.
+// The whole chain, FolkFriend's 91.8 % -> 93.2 %; final detections with the production segmenter
+// (its settings swept again, cross-validated: they stay): 685/703 tunes for 13 false positives,
+// FolkFriend 683 for 11; wrong names shown briefly 46 -> 33; the right name on screen 86.7 ->
+// 88.2 % of the tunes' time.
 
-import { analyseAudio, decode } from './decoder.ts';
+import { analyseAudio, decode, CLEAN_VIEW } from './decoder.ts';
 
 /** FolkFriend's frames: 1024 samples at 48 kHz. */
 const FPS = 48000 / 1024;
@@ -23,7 +26,6 @@ const INTERCEPT = 3, SLOPE = 0.2;
 const GAP = 0.25;
 /** Shortest note kept (FolkFriend frames, its MIN_NOTE_DURATION). */
 const MIN_FRAMES = 3;
-const CUT_COST = 1;
 
 /** Notes as [class, frames, power] to FolkFriend's contour, '' when it would refuse (3 notes or
  *  fewer). A note of no power (heard before the long window's first frame: the window's very
@@ -52,15 +54,21 @@ export function contourOf(notes: [number, number, number][]): string {
   return s;
 }
 
-/** A window of `pcm` (at `rate`, best 48 kHz as measured) as the recogniser's contour. */
-export function recognitionContour(pcm: Float32Array, rate: number): string {
+/** The window heard: its contour for the recogniser, and its tuning (semitones off A = 440). */
+export interface RecognitionWindow { contour: string; tuning: number }
+
+/** A window of `pcm` (at `rate`, best 48 kHz as measured) as the recogniser's query; `extra`:
+ *  FolkFriend's cleaned energies of the same samples folded by classView (without them, the
+ *  decoder reads its own views only: 92.3 % instead of 93.2). */
+export function recognitionContour(pcm: Float32Array, rate: number, extra?: Float32Array): RecognitionWindow {
   const a = analyseAudio(pcm, rate, { gridSize: 0 });
-  const notes = decode(a, { cutCost: CUT_COST });
+  if (extra) { a.extra = extra; a.extraHop = CLEAN_VIEW.hop; }
+  const notes = decode(a);
   const out: [number, number, number][] = [];
   notes.forEach((n, i) => {
     const next = notes[i + 1]?.onset ?? n.offset;
     const end = Math.max(n.offset, Math.min(next, n.offset + GAP));
     out.push([n.cls, (end - n.onset) * FPS, n.power]);
   });
-  return contourOf(out);
+  return { contour: contourOf(out), tuning: a.tuning };
 }

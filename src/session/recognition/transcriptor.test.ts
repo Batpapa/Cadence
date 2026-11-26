@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { transcribeNotes, asClassNotes, recognitionContour, resample, RATE, type Note } from './transcriptor';
+import { transcribeNotes, asClassNotes, recognitionContour, classView, resample, RATE, type Note } from './transcriptor';
 
 /** Harmonic tones (MIDI pitch, start s, length s): 6 partials falling as 1/h, a 5 ms attack,
  *  a 10 ms release, a little noise. */
@@ -64,16 +64,29 @@ describe('recognitionContour', () => {
     const tune: [number, number, number][] = [];
     let t = 0.3;
     for (let r = 0; r < 4; r++) for (const [p, n] of bar) { tune.push([p, t, n * q]); t += n * q; }
-    const contour = recognitionContour(synth(tune, t + 0.3), RATE);
+    const { contour, tuning } = recognitionContour(synth(tune, t + 0.3), RATE);
     // D F# A: c = 'a' + 2, F# 'g', A 'j'; the crotchet as two quavers of its class
     expect(contour).toBe('cgjgcgjj'.repeat(4));
+    expect(Math.abs(tuning)).toBeLessThan(0.05);
   });
 
   it('gives nothing to query in silence', () => {
     // (white noise alone does give ghost notes — the voicing is read against the window's
-    // own level; on the bar-noise recording of the bench, averaged with FolkFriend's, no
-    // detection all the same)
-    expect(recognitionContour(new Float32Array(3 * RATE), RATE)).toBe('');
+    // own level; on the bar-noise recording of the bench, no detection all the same)
+    expect(recognitionContour(new Float32Array(3 * RATE), RATE).contour).toBe('');
+  });
+});
+
+describe('classView', () => {
+  it('folds 48 notes into 12 classes and keeps each frame\'s 5 strongest', () => {
+    const f48 = new Float32Array(2 * 48);
+    // frame 0: C at three octaves (1 + 2 + 3), then D..A# weaker and weaker, B not at all
+    f48[0] = 1; f48[12] = 2; f48[24] = 3;
+    for (let c = 1; c < 11; c++) f48[c] = 1 - c / 20;
+    // frame 1: silent
+    const v = classView(f48);
+    expect(Array.from(v.subarray(0, 12)).map(x => +x.toFixed(2))).toEqual([6, 0.95, 0.9, 0.85, 0.8, 0, 0, 0, 0, 0, 0, 0]);
+    expect(Array.from(v.subarray(12, 24))).toEqual(new Array(12).fill(0));
   });
 });
 

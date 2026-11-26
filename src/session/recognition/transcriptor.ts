@@ -583,6 +583,10 @@ interface DecoderOptions {
    *  ('linear', as FolkFriend's lattice adds energies: a frame where the tune dips costs little). */
   emission?: 'log' | 'linear';
   linearGain?: number;
+  /** Only each long frame's this many strongest classes kept (0: all), as FolkFriend keeps 5. */
+  topClasses?: number;
+  /** Share of the analysis' `extra` class view in the frame scores (0: not read). */
+  extraWeight?: number;
 }
 
 export interface Note {
@@ -606,13 +610,38 @@ function classStep(from: number, to: number): number {
 }
 
 /** The settings measured best (transcriptor/JOURNAL.md, « R6 »): sessions, tuneset,
- *  classical flute and the user's solo recording judged together. */
+ *  classical flute and the user's solo recording judged together — and, since 2026-11-26, the
+ *  recogniser's windows too (« Moteur unique »): ONE regime for writing ABC and for recognising.
+ *  cutCost 2 -> 1.5: transcription as good (sessions tokens 66.8 -> 67.4, tuneset 84.0 -> 84.2),
+ *  the right tune first in 91.8 -> 92.3 % of the windows; FolkFriend's cleaned class energies as an
+ *  extra view at 0.2 (when the analysis carries them, classView): 92.3 -> 93.2 %, the gain in the
+ *  least clear windows (79.0 -> 82.4 %), transcription unchanged within the judges' noise. */
 const DEFAULTS: DecoderOptions = {
-  radius: 3, threshold: 0.5, pitchWeight: 0.25, cutCost: 2, onsetGain: 0.9, repeatCost: 8, repeatGain: 0.5,
+  radius: 3, threshold: 0.5, pitchWeight: 0.25, cutCost: 1.5, onsetGain: 0.9, repeatCost: 8, repeatGain: 0.5,
   intervalWeight: 0, floor: 0.01, restLevel: 0.1, restSlope: 2, levelPct: 0.95, voicingFrom: 'energy',
   minFrames: 10, minRestFrames: 4, maxFrames: 600, sustainSpan: 1875, sustainFraction: 0.5, octaveFrom: 'odd', octavePower: 7,
-  octaveDown: 1.07, acfWeight: 0.3, peakFloorDb: 50,
+  octaveDown: 1.07, acfWeight: 0.3, peakFloorDb: 50, extraWeight: 0.2,
 };
+
+/** FolkFriend's cleaned energies (FolkFriendWASM.take_clean_features over 48 notes from MIDI 48,
+ *  frames of 1024 samples at 48 kHz: the harmonic part, each note minus its median over
+ *  CLEAN_VIEW.drone frames taken every CLEAN_VIEW.stride, as its pitch-class engine reads them)
+ *  folded to the 12 classes, each frame's 5 strongest kept: the decoder's extra view (`Analysis.extra`,
+ *  `extraHop` CLEAN_VIEW.hop). Measured: without the drone removal 92.1 % instead of 93.2; 5 classes
+ *  kept = all 12, 3: 92.7. */
+export const CLEAN_VIEW = { drone: 469, stride: 47, hop: 1024 };
+export function classView(f48: Float32Array): Float32Array {
+  const frames = Math.floor(f48.length / 48), out = new Float32Array(frames * 12);
+  const row = new Float32Array(12);
+  for (let f = 0; f < frames; f++) {
+    for (let m = 0; m < 48; m++) out[f * 12 + (m % 12)] += f48[f * 48 + m]!;
+    row.set(out.subarray(f * 12, f * 12 + 12));
+    row.sort();
+    const keep = row[12 - 5]!;
+    for (let c = 0; c < 12; c++) if (out[f * 12 + c]! < keep) out[f * 12 + c] = 0;
+  }
+  return out;
+}
 
 /** Short window: for time (onsets, where notes change). Long window: for pitch. */
 const SHORT = 2048, LONG = 4096, HOP = 256;
@@ -621,6 +650,10 @@ interface Analysis {
   short: Peaks; long: Peaks; tuning: number; rate: number; shortSize?: number; longSize?: number;
   /** The onset function of a window of gridSize samples, for the grid and the bars (when asked). */
   grid?: Float32Array; gridSize?: number;
+  /** Another view of the pitch classes (optional): 12 energies a frame of `extraHop` samples, the
+   *  first frame starting at sample 0 — e.g. FolkFriend's cleaned energies folded to classes. Read
+   *  with the weight `extraWeight` (decoder option). */
+  extra?: Float32Array; extraHop?: number;
 }
 
 /** Harmonic mask median lengths (frames at HOP, bins): see spectrum.ts. */
@@ -683,7 +716,19 @@ function prepare(a: Analysis, o: DecoderOptions): Prepared {
 function decode(a: Analysis, options: DecoderOptions = {}): Note[] {
   const o = { ...DEFAULTS, ...options };
   const { short } = a;
-  const { sal, cls, clsAcf } = prepare(a, o);
+  const { sal, clsAcf } = prepare(a, o);
+  let { cls } = prepare(a, o);
+  const topK = o.topClasses ?? 0;
+  if (topK > 0 && topK < 12) {
+    // the weaker classes of each frame silenced
+    cls = Float32Array.from(cls);
+    const order = new Int8Array(12);
+    for (let j = 0; j < sal.frames; j++) {
+      for (let k = 0; k < 12; k++) order[k] = k;
+      order.sort((p, q) => cls[j * 12 + q]! - cls[j * 12 + p]!);
+      for (let r = topK; r < 12; r++) cls[j * 12 + order[r]!] = 0;
+    }
+  }
   const aw = clsAcf ? (o.acfWeight ?? 0) : 0;
   const hopS = HOP / a.rate;
   // the long-window frame centred nearest each short-window frame
@@ -732,14 +777,23 @@ function decode(a: Analysis, options: DecoderOptions = {}): Note[] {
   const E = new Float64Array((n + 1) * 13);
   const norm12 = Math.log(1 + 12 * floor);
   const linear = o.emission === 'linear', lg = o.linearGain ?? 20;
+  // the extra class view: the frame of it under each short frame's centre
+  const xw = a.extra && a.extraHop ? (o.extraWeight ?? 0) : 0;
+  const xFrames = xw > 0 ? Math.floor(a.extra!.length / 12) : 0;
   for (let t = 0; t < n; t++) {
     const v = 1 / (1 + Math.pow((restLevel * level) / (vx[t]! + 1e-12), restSlope)); // P(voiced)
     const lv = Math.log(v + 1e-9);
     let ta = 0;
     if (aw > 0) for (let k = 0; k < 12; k++) ta += clsAcf![t * 12 + k]!;
+    let xf = -1, tx = 0;
+    if (xw > 0) {
+      xf = Math.min(xFrames - 1, Math.floor((t * HOP + ss / 2) / a.extraHop!));
+      for (let k = 0; k < 12; k++) tx += a.extra![xf * 12 + k]!;
+    }
     for (let k = 0; k < 12; k++) {
       let share = tot[t]! > 0 ? clsAt(t, k) / tot[t]! : 1 / 12;
       if (aw > 0) share = (1 - aw) * share + aw * (ta > 0 ? clsAcf![t * 12 + k]! / ta : 1 / 12);
+      if (xw > 0) share = (1 - xw) * share + xw * (tx > 0 ? a.extra![xf * 12 + k]! / tx : 1 / 12);
       E[(t + 1) * 13 + k] = E[t * 13 + k]! + (linear ? lg * v * share : lv + Math.log(share + floor) - norm12);
     }
     E[(t + 1) * 13 + 12] = E[t * 13 + 12]! + (linear ? lg * (1 - v) / 12 : Math.log(1 - v + 1e-9) + Math.log(1 / 12));
@@ -830,14 +884,15 @@ function decode(a: Analysis, options: DecoderOptions = {}): Note[] {
  *  centred `onsetCentre` samples after its start). */
 export interface Heard { notes: Note[]; onsets: Float32Array; onsetCentre: number }
 
-export function hear(pcm: Float32Array, rate: number, progress?: (ratio: number) => void): Heard {
+export function hear(pcm: Float32Array, rate: number, progress?: (ratio: number) => void, extra?: Float32Array): Heard {
   const a = analyseAudio(pcm, rate, { progress });
+  if (extra) { a.extra = extra; a.extraHop = CLEAN_VIEW.hop; }
   return a.grid ? { notes: decode(a), onsets: a.grid, onsetCentre: a.gridSize! / 2 } : { notes: decode(a), onsets: a.short.flux, onsetCentre: (a.shortSize ?? SHORT) / 2 };
 }
 
 /** A recording's notes (hear's). */
-export function transcribeNotes(pcm: Float32Array, rate: number, progress?: (ratio: number) => void): Note[] {
-  return hear(pcm, rate, progress).notes;
+export function transcribeNotes(pcm: Float32Array, rate: number, progress?: (ratio: number) => void, extra?: Float32Array): Note[] {
+  return hear(pcm, rate, progress, extra).notes;
 }
 
 /** What Cadence's transcription.ts reads for its grid, its repeated notes and its bars:
@@ -892,20 +947,23 @@ export function resample(pcm: Float32Array, from: number, to = RATE): Float32Arr
 
 // ── recognition.ts ──────────────────────────────────────────────────────────────────────
 
-// The recogniser's query from these notes (2026-11-26): a 10 s window's notes made into
-// FolkFriend's contour, one pitch class a quaver ('a' = C ... 'l' = B), to be queried against
-// its index folded to pitch classes. The tempo is chosen per window as FolkFriend's contour.rs
-// does (contour_from_notes: 60-175 crotchets a minute by 5, each note rounded to whole quavers,
-// the rounding error weighed by the note's power, times a note-length model intercept - slope x
-// quavers), with two changes measured on the 18 annotated sessions (recognition-research/
-// JOURNAL.md, section 22; windows whose right tune is first, FolkFriend 91.8 %):
-//   - more cuts than for writing ABC (cutCost 1, not 2): a swallowed note costs the alignment
-//     more than an extra one — 89.8 -> 91.0 %;
-//   - a gentler note-length slope (0.2, not 0.5) — 91.0 -> 92.4 %, flat from 0.1 to 0.3;
+// The recogniser's query from these notes (2026-11-26): a 10 s window's notes — decoded in the
+// same regime as for writing ABC (decoder.ts's DEFAULTS, FolkFriend's cleaned class energies as
+// the extra view) — made into FolkFriend's contour, one pitch class a quaver ('a' = C ... 'l' =
+// B), to be queried against its index folded to pitch classes. The tempo is chosen per window as
+// FolkFriend's contour.rs does (contour_from_notes: 60-175 crotchets a minute by 5, each note
+// rounded to whole quavers, the rounding error weighed by the note's power, times a note-length
+// model intercept - slope x quavers), with two changes measured on the 18 annotated sessions
+// (recognition-research/JOURNAL.md, section 22; windows whose right tune is first):
+//   - a gentler note-length slope (0.2, not 0.5): 91.0 -> 92.4 %, flat from 0.1 to 0.3 (neutral
+//     on FolkFriend's own notes: the gain comes from our onsets' precision);
 //   - a note lasts to the next onset (at most 0.25 s past its end): rests are not symbols.
-// Final detections with the production segmenter: 686/703 tunes for 14 false positives,
-// FolkFriend 683 for 11; averaged with FolkFriend's scores, 685 for 10 and half the wrong
-// names shown briefly.
+// The tempo estimated from our onsets instead of the search: 92.0 (fixed), 93.0 (searched around
+// it), against 93.2 — not kept.
+// The whole chain, FolkFriend's 91.8 % -> 93.2 %; final detections with the production segmenter
+// (its settings swept again, cross-validated: they stay): 685/703 tunes for 13 false positives,
+// FolkFriend 683 for 11; wrong names shown briefly 46 -> 33; the right name on screen 86.7 ->
+// 88.2 % of the tunes' time.
 
 
 /** FolkFriend's frames: 1024 samples at 48 kHz. */
@@ -916,7 +974,6 @@ const INTERCEPT = 3, SLOPE = 0.2;
 const GAP = 0.25;
 /** Shortest note kept (FolkFriend frames, its MIN_NOTE_DURATION). */
 const MIN_FRAMES = 3;
-const CUT_COST = 1;
 
 /** Notes as [class, frames, power] to FolkFriend's contour, '' when it would refuse (3 notes or
  *  fewer). A note of no power (heard before the long window's first frame: the window's very
@@ -945,15 +1002,21 @@ function contourOf(notes: [number, number, number][]): string {
   return s;
 }
 
-/** A window of `pcm` (at `rate`, best 48 kHz as measured) as the recogniser's contour. */
-export function recognitionContour(pcm: Float32Array, rate: number): string {
+/** The window heard: its contour for the recogniser, and its tuning (semitones off A = 440). */
+export interface RecognitionWindow { contour: string; tuning: number }
+
+/** A window of `pcm` (at `rate`, best 48 kHz as measured) as the recogniser's query; `extra`:
+ *  FolkFriend's cleaned energies of the same samples folded by classView (without them, the
+ *  decoder reads its own views only: 92.3 % instead of 93.2). */
+export function recognitionContour(pcm: Float32Array, rate: number, extra?: Float32Array): RecognitionWindow {
   const a = analyseAudio(pcm, rate, { gridSize: 0 });
-  const notes = decode(a, { cutCost: CUT_COST });
+  if (extra) { a.extra = extra; a.extraHop = CLEAN_VIEW.hop; }
+  const notes = decode(a);
   const out: [number, number, number][] = [];
   notes.forEach((n, i) => {
     const next = notes[i + 1]?.onset ?? n.offset;
     const end = Math.max(n.offset, Math.min(next, n.offset + GAP));
     out.push([n.cls, (end - n.onset) * FPS, n.power]);
   });
-  return contourOf(out);
+  return { contour: contourOf(out), tuning: a.tuning };
 }

@@ -6,7 +6,7 @@ import { getSettingContour } from './indexStore';
 import { FF_PCM_WINDOW } from '../sessionConfig';
 import { Novelty, estimateRate } from '../liveTempo';
 import { transcribe, quaverContour, keyOfAbc, makeKey, writeAbc } from './transcription';
-import { hear, gridNovelty, asClassNotes, resample, RATE } from './transcriptor';
+import { hear, gridNovelty, asClassNotes, classView, CLEAN_VIEW, resample, RATE } from './transcriptor';
 import { initTranscriptor } from './transcriptorInit';
 
 // ── Score following worker ───────────────────────────────────────────────────
@@ -366,16 +366,25 @@ async function writeOut(pcm: Float32Array, rate: number, onRatio: (r: number) =>
   await engine(); // the module's init
   await initTranscriptor(); // the notes' analysis in WebAssembly (else in TypeScript)
   const f = new FolkFriendWASM();
+  // FolkFriend's cleaned class energies too: the decoder's extra view (transcriptor.ts's
+  // classView — the regime the experimental recognition decodes in as well)
+  const v = new FolkFriendWASM();
   try {
     f.set_sample_rate(rate);
     f.keep_magnitudes();
-    const at = f.alloc_single_pcm_window();
+    v.set_sample_rate(rate);
+    v.enable_clean_features();
+    const at = f.alloc_single_pcm_window(), vat = v.alloc_single_pcm_window();
     const n = Math.floor(pcm.length / FF_PCM_WINDOW);
     for (let i = 0; i < n; i++) {
-      f.get_allocated_pcm_window(at).set(pcm.subarray(i * FF_PCM_WINDOW, (i + 1) * FF_PCM_WINDOW));
+      const frame = pcm.subarray(i * FF_PCM_WINDOW, (i + 1) * FF_PCM_WINDOW);
+      f.get_allocated_pcm_window(at).set(frame);
       f.feed_single_pcm_window(at);
+      v.get_allocated_pcm_window(vat).set(frame);
+      v.feed_single_pcm_window(vat);
       if ((i & 255) === 0) onRatio((0.25 * i) / n);
     }
+    const extra = classView(v.take_clean_features(CLEAN_VIEW.drone, false, CLEAN_VIEW.stride, 0));
     // FolkFriend's 48-note energies for the tempo, the metre and the key; the notes, and an
     // onset function for the grid, from the transcription's own decoder (transcriptor.ts:
     // onsets every 5 ms, pitch read over whole notes — cadence-transcriptor's JOURNAL.md has
@@ -383,7 +392,7 @@ async function writeOut(pcm: Float32Array, rate: number, onRatio: (r: number) =>
     const features = f.take_magnitude_features();
     onRatio(0.3);
     const fps = rate / FF_PCM_WINDOW;
-    const heard = hear(pcm, rate, r => onRatio(0.3 + 0.65 * r));
+    const heard = hear(pcm, rate, r => onRatio(0.3 + 0.65 * r), extra);
     const classes = asClassNotes(heard.notes, fps);
     onRatio(0.95);
     const novelty = new Novelty().of(features);
@@ -396,6 +405,7 @@ async function writeOut(pcm: Float32Array, rate: number, onRatio: (r: number) =>
     return writeAbc(tune, key);
   } finally {
     f.free();
+    v.free();
   }
 }
 

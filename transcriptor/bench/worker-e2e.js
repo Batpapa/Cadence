@@ -27,9 +27,19 @@ const CH = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV';
   const at = f.alloc_single_pcm_window();
   for (let i = 0; i + 1024 <= pcm.length; i += 1024) { f.get_allocated_pcm_window(at).set(pcm.subarray(i, i + 1024)); f.feed_single_pcm_window(at); }
   const features = f.take_magnitude_features();
+  // FolkFriend's cleaned class energies, the decoder's extra view (NOVIEW=1: without)
+  let extra;
+  if (!process.env.NOVIEW && !process.env.OLD) {
+    const v = new FolkFriendWASM();
+    v.set_sample_rate(rate); v.enable_clean_features();
+    const vat = v.alloc_single_pcm_window();
+    for (let i = 0; i + 1024 <= pcm.length; i += 1024) { v.get_allocated_pcm_window(vat).set(pcm.subarray(i, i + 1024)); v.feed_single_pcm_window(vat); }
+    extra = X.classView(v.take_clean_features(X.CLEAN_VIEW.drone, false, X.CLEAN_VIEW.stride, 0));
+    v.free();
+  }
   const t1 = performance.now();
   const fps = rate / 1024;
-  const heard = process.env.OLD ? null : X.hear(pcm, rate);
+  const heard = process.env.OLD ? null : X.hear(pcm, rate, undefined, extra);
   const classes = process.env.OLD ? f.transcribe_notes() : X.asClassNotes(heard.notes, fps);
   const t2 = performance.now();
   const novelty = new L.Novelty().of(features);

@@ -56,9 +56,9 @@ export interface RecognitionOptions {
   /** Follow the tempo of the audio too (liveTempo.ts): a reading a second of
    *  signal, through `onTempo`. */
   tempo?: boolean;
-  /** Every window transcribed by cadence-transcriptor too, the two queries
-   *  averaged (engineFusion.ts) — the hidden experimental recognition, for file
-   *  imports only. */
+  /** Every window transcribed by cadence-transcriptor instead of FolkFriend
+   *  (ffWorker.ts's analyzeWithTranscriptor) — the hidden experimental
+   *  recognition, for file imports only. */
   transcriptor?: boolean;
 }
 

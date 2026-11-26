@@ -30,6 +30,8 @@ const FPS = 48000 / 1024;
       a = D.analyseAudio(C.decode(it.audio, { start: it.start ?? 0, dur: it.dur ?? null, rate: 48000 }), 48000);
       fs.writeFileSync(file, v8.serialize(a));
     }
+    // EXTRA_ANA=<tag>: FolkFriend's cleaned class energies (bench/ff-extra.js) as the decoder's extra view
+    if (process.env.EXTRA_ANA) { a.extra = v8.deserialize(fs.readFileSync(path.join(__dirname, '../out', `${process.env.EXTRA_ANA}-${corpus}-${i}.v8`))); a.extraHop = 1024; }
     const notes = D.decode(a, opts);
     const flat = [];
     for (const n of notes) {
