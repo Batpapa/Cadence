@@ -28,14 +28,6 @@ import type { User, UserExtensions } from '../types';
 
 export type ExtensionId = keyof UserExtensions;
 
-/** The Transcription module ships with its recordings on Drive, as an
- *  analysis's are (the user, 2026-11-28: released together, and nobody using
- *  it before). Until then it lives in the dev server only: in a production
- *  build its option is not listed and nothing of it is offered, whatever a
- *  user's flags say. Webpack writes NODE_ENV in from its mode; under vitest it
- *  is 'test', the module there to be tested. */
-const TRANSCRIPTION_RELEASED = process.env.NODE_ENV !== 'production';
-
 export interface ExtensionOption {
   id: string;
   labelKey: string;
@@ -69,7 +61,7 @@ export const EXTENSIONS: ReadonlyArray<Extension> = [
     absentOn: 'irishTrad',
     options: [
       { id: 'cardTypes', labelKey: 'extensions.music.cardTypes', defaultOn: true, forced: true },
-      ...(TRANSCRIPTION_RELEASED ? [{ id: 'transcription', labelKey: 'extensions.music.transcription', defaultOn: true }] : []),
+      { id: 'transcription', labelKey: 'extensions.music.transcription', defaultOn: true },
     ],
   },
   {
@@ -152,7 +144,7 @@ export function cardTypesOffered(user?: UserLike): boolean {
 
 /** The Transcription module. */
 export function transcriptionOffered(user?: UserLike): boolean {
-  return TRANSCRIPTION_RELEASED && extensionOption('music', 'transcription', user);
+  return extensionOption('music', 'transcription', user);
 }
 
 /** What a brand-new user starts with: every extension off. Written out

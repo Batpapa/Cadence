@@ -76,8 +76,7 @@ function ContentSwitch() {
   if (route.view === 'sessions') return <SessionsView key={route.sessionId ?? (route.tab === 'tunes' ? 'detections' : 'library')} {...route} />;
   if (route.view === 'trending') return <TrendingView key={e} />;
   // Keyed on the transcription: its screen holds a score viewer of its own.
-  // Not offered (unreleased, or switched off): the library, whatever route
-  // led here.
+  // Not offered (switched off): the library, whatever route led here.
   if (route.view === 'transcriptions') return transcriptionOffered()
     ? <TranscriptionsView key={e + (route.id ?? 'list')} {...route} />
     : <LibraryView key={e} />;
