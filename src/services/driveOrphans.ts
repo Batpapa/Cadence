@@ -1,5 +1,6 @@
 import type { AppState } from '../types';
 import { analyserModuleOf } from '../session/model';
+import { transcriptionModuleOf } from '../transcription/model';
 import {
   isDriveConnected, hasDriveToken, manualSync, readDriveFile, findCompanionPath,
   listCompanionChildren, trashCompanionFile, driveBlobSize, type DriveChild,
@@ -43,10 +44,14 @@ const FOLDER_MIME = 'application/vnd.google-apps.folder';
 
 const ATTACHMENTS_DIR = 'attachments';
 const MIN_AGE_DAYS = 30;
-/** `cadence-session-<id>.<ext>`, as session/db.ts writes it. Anything else in
- *  the companion root is something this sweep does not understand, and what it
- *  does not understand it leaves alone. */
-const SESSION_AUDIO = /^cadence-session-.+\.[^.]+$/;
+/** `cadence-session-<id>.<ext>`, as session/db.ts writes it, and
+ *  `cadence-transcription-<id>.<ext>`, as transcription/audioSync.ts does
+ *  (2026-11-28) — both modules' recordings, judged against both modules'
+ *  records. Anything else in the companion root is something this sweep does
+ *  not understand, and what it does not understand it leaves alone. A build
+ *  from before the transcriptions does not know their name, so leaves them
+ *  alone too. */
+const SESSION_AUDIO = /^cadence-(session|transcription)-.+\.[^.]+$/;
 
 export interface DriveOrphan {
   id: string;
@@ -82,9 +87,10 @@ function referenced(state: AppState): { attachments: Set<string>; recordings: Se
     }
   }
   const recordings = new Set<string>();
-  const mod = analyserModuleOf(state);
-  for (const entry of Object.values(mod?.syncedAudio ?? {})) {
-    if (entry?.fileId) recordings.add(entry.fileId);
+  for (const synced of [analyserModuleOf(state)?.syncedAudio, transcriptionModuleOf(state)?.syncedAudio]) {
+    for (const entry of Object.values(synced ?? {})) {
+      if (entry?.fileId) recordings.add(entry.fileId);
+    }
   }
   return { attachments, recordings };
 }

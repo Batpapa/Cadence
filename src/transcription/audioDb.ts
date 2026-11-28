@@ -12,10 +12,11 @@ import { openDB, type IDBPDatabase } from 'idb';
 // module hangs waiting for it (session/db.ts). A store added later is added
 // under a NEW database name, never by an upgrade.
 //
-// Not on Drive yet: a recording transcribed on one device is heard on that one
-// (2026-11-27 — the Drive copy is the module's next step). Nothing here deletes
-// a row on its own: only deleting the transcription does, and removing the
-// user from this device.
+// Copied to Drive as the analyser's are (audioSync.ts, since 2026-11-28),
+// which is what makes them heard on the user's other devices. Nothing here
+// deletes a row on its own: deleting the transcription does, freeing its
+// recording from this device once Drive has a copy, and removing the user
+// from this device.
 
 const STORE = 'audio';
 const DB_VERSION = 1;
@@ -59,6 +60,57 @@ export async function getTranscriptionAudio(id: string): Promise<Blob | undefine
 
 export async function deleteTranscriptionAudio(id: string): Promise<void> {
   await (await db()).delete(STORE, id);
+}
+
+/** The transcriptions whose recording this device holds — the keys only,
+ *  never the blobs; the take waiting to be transcribed is none of them. */
+export async function transcriptionAudioKeys(): Promise<string[]> {
+  const keys = await (await db()).getAllKeys(STORE) as string[];
+  return keys.filter(k => k !== PENDING_KEY);
+}
+
+/** The user this module's database is open for. */
+export function transcriptionDbUserId(): string | null {
+  return _userId;
+}
+
+/** How much recording a user's database holds — for the storage panel and the
+ *  warnings before a user is removed, as localSessionAudioStats does for the
+ *  analyser's, and under the same rule: null when it cannot be told cheaply
+ *  and safely (no database, an unreadable one, no `indexedDB.databases`),
+ *  never an empty database created to find out. A take not transcribed yet
+ *  counts: it is a recording only this device has. */
+export async function localTranscriptionAudioStats(userId: string): Promise<{ count: number; bytes: number } | null> {
+  const name = dbName(userId);
+  if (!indexedDB.databases) return null;
+  try {
+    const all = await indexedDB.databases();
+    if (!all.some(d => d.name === name)) return null;
+    const raw = await new Promise<IDBDatabase>((resolve, reject) => {
+      const req = indexedDB.open(name);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+      req.onblocked = () => reject(new Error('indexeddb_blocked'));
+    });
+    try {
+      if (!raw.objectStoreNames.contains(STORE)) return null;
+      const values = await new Promise<unknown[]>((resolve, reject) => {
+        const req = raw.transaction(STORE, 'readonly').objectStore(STORE).getAll();
+        req.onsuccess = () => resolve(req.result as unknown[]);
+        req.onerror = () => reject(req.error);
+      });
+      let count = 0, bytes = 0;
+      for (const v of values) {
+        const blob = v instanceof Blob ? v : (v as PendingTake | null)?.audio;
+        if (blob instanceof Blob && blob.size > 0) { count++; bytes += blob.size; }
+      }
+      return count > 0 ? { count, bytes } : null;
+    } finally {
+      raw.close();
+    }
+  } catch {
+    return null;
+  }
 }
 
 /** Drops the whole database when a user is removed from this device, or reset.

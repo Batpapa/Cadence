@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
-import { TrashIcon, NotesIcon, MoreHorizontalIcon } from '../../components/icons';
+import { TrashIcon, NotesIcon, MoreHorizontalIcon, CloudUpIcon } from '../../components/icons';
+import type { AutoUploadState } from '../companionAudio';
 import { IconButton } from '../../components/ui';
 import { confirmModal } from '../../components/modal';
 import { useContextMenu, type ContextMenuEntry } from '../../components/contextMenu';
@@ -8,6 +9,76 @@ import type { IndexProgress } from '../recognition/indexStore';
 import type { Detection } from '../model';
 import { DateField } from '../../components/dateField';
 import { fieldValueToDate } from '../../services/dateFormat';
+
+// ── A recording's Drive copy, at a glance ────────────────────────────────────
+// An analysis's (SessionSummary.tsx) and, since 2026-11-28, a transcription's.
+
+/** Where a recording's Drive copy stands. Same readings as the header's own
+ *  sync indicator, because it is the same question about a smaller thing. */
+export type DriveAudioState = 'off' | 'uploading' | 'on' | 'error' | 'waiting' | 'wifi';
+
+/** That state, from what a page knows: its own transfer in flight or failed,
+ *  the copy recorded, the automatic copy's (companionAudio.ts). */
+export function driveAudioStateOf(o: { busy: boolean; failed: boolean; synced: boolean; auto: AutoUploadState | undefined }): DriveAudioState {
+  const auto = o.synced ? undefined : o.auto;
+  return o.busy || auto === 'uploading' ? 'uploading'
+    : o.failed ? 'error'
+    : o.synced ? 'on'
+    : auto === 'waiting' ? 'waiting'
+    : auto === 'wifi' ? 'wifi'
+    : 'off';
+}
+
+const NOT_ON_DRIVE_TITLE: Record<Exclude<DriveAudioState, 'on'>, string> = {
+  off:       'sessions.syncAudio.off',
+  uploading: 'sessions.syncAudio.uploading',
+  error:     'sessions.syncAudio.retry',
+  // The automatic copy failed and will be tried again on its own (companionAudio.ts).
+  waiting:   'sessions.syncAudio.retryPending',
+  // Held until this device is on Wi-Fi, as it was told (companionAudio.ts).
+  wifi:      'sessions.syncAudio.waitingWifi',
+};
+
+/** The one state of a recording's whereabouts nothing else on the screen says
+ *  (2026-11-05, the user's design): here but NOT on Drive. Here and on Drive is
+ *  the ordinary case and shows nothing; on Drive only shows in the player's ▶;
+ *  nowhere is the line under the views. So this is a cloud struck through, or
+ *  on its way up, or failing — never a green one: a copy that is there is no
+ *  news, and the green cloud that REMOVED the copy when touched is what this
+ *  replaces. Touched, it offers the copy, confirmed.
+ *
+ *  Hover never changes the HUE, only its lightness: colour is state here, as on
+ *  the header's indicator, and an accent-on-hover idle icon read as an upload
+ *  started and stuck (2026-09-08). */
+export function NotOnDriveBtn({ state, onClick }: { state: Exclude<DriveAudioState, 'on'>; onClick: () => void }) {
+  const uploading = state === 'uploading';
+  const tone =
+    uploading ? 'text-accent animate-pulse cursor-default' :
+    state === 'error' || state === 'waiting' ? 'text-danger cursor-pointer' :
+    // Not a failure: nothing went wrong, it is waiting as asked.
+    state === 'wifi' ? 'text-warn cursor-pointer' :
+    'text-dim hover:text-muted cursor-pointer';
+  const title = t(NOT_ON_DRIVE_TITLE[state] as Parameters<typeof t>[0]);
+  return (
+    <button
+      class={`relative icon-btn ${tone}`}
+      title={title}
+      aria-label={title}
+      disabled={uploading}
+      onClick={uploading ? undefined : onClick}
+    >
+      {uploading ? <CloudUpIcon size={16} /> : (
+        <>
+          {/* CloudIcon's outline, unfilled: icons.tsx has only the filled one. */}
+          <svg viewBox="0 0 24 24" width={16} height={16} fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true">
+            <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" />
+          </svg>
+          <span aria-hidden="true" class="absolute left-1/2 top-1/2 w-[19px] h-[1.5px] rounded bg-current -translate-x-1/2 -translate-y-1/2 -rotate-45" />
+        </>
+      )}
+    </button>
+  );
+}
 
 // ── Shared UI helpers ────────────────────────────────────────────────────────
 // Small pieces used by more than one of the session containers

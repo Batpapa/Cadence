@@ -32,6 +32,13 @@ const KEYS = {
   audioFreed:            { prefix: 'cadence_audio_freed:',              group: 'app' },
   audioDownloadMode:     { prefix: 'cadence_audio_download_mode:',      group: 'app' },
   audioDownloadWifiOnly: { prefix: 'cadence_audio_download_wifi_only:', group: 'app' },
+  // The Transcription module's recordings (2026-11-28): the same lists and
+  // choices as the analyser's above, its own (session/companionAudio.ts).
+  transcriptionAudioUploadWifiOnly:   { prefix: 'cadence_transcription_audio_upload_wifi_only:',   group: 'app' },
+  transcriptionAudioUploadsWanted:    { prefix: 'cadence_transcription_audio_uploads_wanted:',     group: 'app' },
+  transcriptionAudioFreed:            { prefix: 'cadence_transcription_audio_freed:',              group: 'app' },
+  transcriptionAudioDownloadMode:     { prefix: 'cadence_transcription_audio_download_mode:',      group: 'app' },
+  transcriptionAudioDownloadWifiOnly: { prefix: 'cadence_transcription_audio_download_wifi_only:', group: 'app' },
 } as const satisfies Record<string, { prefix: string; group: 'drive' | 'app' }>;
 
 export type UserKey = keyof typeof KEYS;

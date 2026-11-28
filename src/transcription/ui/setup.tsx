@@ -223,20 +223,26 @@ function abandonSetup(): void {
 /** Transcribing a stored transcription again (2026-11-28, the user): its
  *  recording, its passage, its settings and its name to start from; its draft
  *  replaced when done — asked first, always, as re-analysing is; its
- *  corrections said to go with it when it has some. */
-export async function startRedo(id: string): Promise<void> {
+ *  corrections said to go with it when it has some. Its recording from this
+ *  device, else from `fromDrive` once the question is answered — a recording
+ *  only on Drive is brought down for it, not kept (the analyser's re-analysis,
+ *  2026-11-05); null when it could not be had, the user told why. */
+export async function startRedo(id: string, fromDrive?: () => Promise<Blob | null>): Promise<void> {
   const r = transcriptionModuleOf(appState.value)?.transcriptions[id];
   if (!r) return;
-  const audio = await getTranscriptionAudio(id);
-  if (!audio) { alertModal(t('transcribe.title'), t('transcription.audioElsewhere')); return; }
-  const go = () => {
+  const local = await getTranscriptionAudio(id);
+  if (!local && !fromDrive) { alertModal(t('transcribe.title'), t('transcription.audioElsewhere')); return; }
+  const go = async () => {
+    const audio = local ?? await fromDrive!();
+    // gone meanwhile, or not to be had
+    if (!audio || !transcriptionModuleOf(appState.value)?.transcriptions[id]) return;
     setup.value = {
       source: { audio, label: r.origin ?? r.name, source: r.source, duration: r.duration, mimeType: r.mimeType },
       from: r.from, to: r.to, settings: { ...r.settings }, name: r.name, redo: { id },
     };
     navigate({ view: 'transcriptions' });
   };
-  confirmModal(t('transcription.redo.title'), t(r.abc === undefined ? 'transcription.redo.message' : 'transcription.redo.corrected'), t('transcription.menu.redo'), go, { destructive: false });
+  confirmModal(t('transcription.redo.title'), t(r.abc === undefined ? 'transcription.redo.message' : 'transcription.redo.corrected'), t('transcription.menu.redo'), () => { void go(); }, { destructive: false });
 }
 
 export function SetupScreen({ s }: { s: Setup }) {

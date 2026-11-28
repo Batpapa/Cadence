@@ -256,7 +256,7 @@ function getInfoContent(ctx: AppContext): { title: string; sections: HelpSection
         sections: [
           { style: 'definition', heading: t('help.transcription.what.heading'),  items: [t('help.transcription.what.1'), t('help.transcription.what.2')] },
           { style: 'logic',      heading: t('help.transcription.start.heading'), items: [t('help.transcription.start.1'), t('help.transcription.start.2'), t('help.transcription.start.3')] },
-          { style: 'logic',      heading: t('help.transcription.list.heading'),  items: [t('help.transcription.list.1'), t('help.transcription.list.2'), t('help.transcription.list.3')] },
+          { style: 'logic',      heading: t('help.transcription.list.heading'),  items: [t('help.transcription.list.1'), t('help.transcription.list.2'), t('help.transcription.list.3'), t('help.transcription.list.4')] },
         ],
       };
   }

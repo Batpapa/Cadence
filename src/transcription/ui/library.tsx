@@ -1,7 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import { appState, mutate, navigate, replaceRoute, replaceRouteNow, routeSignal, navEntry } from '../../store';
-import { TranscribeIcon } from '../../components/icons';
+import { TranscribeIcon, GearIcon } from '../../components/icons';
+import { IconButton } from '../../components/ui';
+import { isDriveConnected } from '../../services/driveService';
+import { showTranscriptionSettingsModal } from './settingsModal';
 import { SearchField } from '../../components/searchField';
 import { FolderBrowser, type FolderItem, type FolderSource } from '../../components/folderBrowser';
 import { mayHoldAudio } from '../../services/audioSniff';
@@ -103,13 +106,25 @@ export function TranscriptionLibrary({ initialSearch, folder }: { initialSearch?
         if (file && mayHoldAudio(file.type)) void startSetup(file, file.name, 'file', folderId);
       }}
     >
-      {/* The module's own icon before its name, as the analyser has it; the
-          row as tall as the analyser's, which has its gear. */}
-      <div class="flex items-center min-h-8 mb-4">
+      {/* The module's own icon before its name, and its gear, as the
+          analyser has them — the gear with Drive only: the recordings and
+          Drive are all it holds (settingsModal.tsx). */}
+      <div class="flex items-center justify-between min-h-8 mb-4">
         <h1 class="text-xl font-semibold text-primary flex items-center gap-2">
           <TranscribeIcon size={18} />
           {t('transcription.moduleTitle')}
         </h1>
+        {isDriveConnected() && (
+          <IconButton
+            label={t('transcription.settings.title')}
+            variant="outline"
+            class="hover:text-accent"
+            data-tour="transcription-gear"
+            onClick={showTranscriptionSettingsModal}
+          >
+            <GearIcon size={14} />
+          </IconButton>
+        )}
       </div>
       {/* The ways in, one block for the walkthrough to light. */}
       <div data-tour="transcription-start">

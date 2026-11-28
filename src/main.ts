@@ -21,6 +21,7 @@ import { initAudioDownloads } from './session/audioDownloads';
 import { installCardRecognition } from './session/recognition/cardIndexSource';
 import { initAttachmentDbForUser } from './services/attachmentDb';
 import { initTranscriptionDbForUser } from './transcription/audioDb';
+import { transcriptionAudio, transcriptionDownloads } from './transcription/audioSync';
 import { initAttachmentSync } from './services/attachmentStore';
 import { applyDriveState, showDriveConflictModal } from './components/driveConflictModal';
 import { migrateState, applyExternalData } from './services/migration';
@@ -439,6 +440,10 @@ function finishBoot(root: HTMLElement): void {
   initAudioUploadRetry();
   // …and, the other way, the ones on Drive brought here if this device asked.
   initAudioDownloads();
+  // The same for the Transcription module's recordings: its own lists and
+  // choices, nothing to do for whoever never transcribed anything.
+  transcriptionAudio.initUploadRetry();
+  transcriptionDownloads.init();
   // The user's tune cards recognised alongside TheSession's index, as the
   // analyser's options say, and their versions readable by its views
   // (cardIndexSource.ts).

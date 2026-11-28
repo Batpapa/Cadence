@@ -83,8 +83,9 @@ function sessionDuration(sessionId: string): number {
   return mod?.sessions[sessionId]?.duration ?? 0;
 }
 
-/** The manual mode's question. Resolves false on any way out of the dialog. */
-function confirmDownload(bytes: number): Promise<boolean> {
+/** The manual mode's question. Resolves false on any way out of the dialog.
+ *  A transcription's score asks it too (transcription/ui/screen.tsx). */
+export function confirmDownload(bytes: number): Promise<boolean> {
   return new Promise(resolve => {
     const body = document.createElement('p');
     body.className = 'text-sm text-muted leading-relaxed';

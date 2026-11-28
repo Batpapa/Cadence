@@ -428,6 +428,10 @@ export function showDriveConflictModal(
       void import('../session/db')
         .then(({ untrashResurrectedAudio }) => untrashResurrectedAudio(remote))
         .catch(() => { /* best-effort */ });
+      // The transcriptions' the same way (transcription/audioSync.ts).
+      void import('../transcription/audioSync')
+        .then(({ transcriptionAudio }) => transcriptionAudio.untrashResurrected(remote))
+        .catch(() => { /* best-effort */ });
     } else {
       // Also discards any buffered upload and settles the status (green) —
       // see markSyncedAfterApply. Applies the ORIGINAL payload, not the

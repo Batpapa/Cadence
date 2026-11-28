@@ -1,8 +1,11 @@
-import { mutate } from '../store';
+import { appState, mutate } from '../store';
 import { generateId } from '../utils';
-import { editTranscriptionModule, editTranscriptionTree, retitled, type TranscriptionRecord } from './model';
+import { editTranscriptionModule, editTranscriptionTree, retitled, transcriptionModuleOf, type TranscriptionRecord } from './model';
 import { forgetSession, placeSession } from '../session/sessionTree';
 import { putTranscriptionAudio, deleteTranscriptionAudio } from './audioDb';
+import { transcriptionAudio } from './audioSync';
+import { trashCompanionFile } from '../services/driveService';
+import { refreshStorageEstimate } from '../services/storageService';
 
 // ── What is done to a transcription ──────────────────────────────────────────
 // Every write goes through mutate() on the stored copy, and never brings back
@@ -28,6 +31,11 @@ export async function addTranscription(record: Omit<TranscriptionRecord, 'id'>, 
     // a folder only: the root needs no entry (an id in no folder is at the root)
     if (folderId) editTranscriptionTree(s, tree => { if (tree.folders[folderId]) placeSession(tree, id, folderId); });
   });
+  // Then to Drive, as the module's settings say — once the record is written,
+  // which the retries look for (companionAudio.ts). Never in the way: a copy
+  // that fails is tried again, and the recording is here meanwhile.
+  void refreshStorageEstimate();
+  void transcriptionAudio.queueUpload(id).catch(e => console.warn('[transcription] could not queue the copy to Drive', e));
   return id;
 }
 
@@ -84,12 +92,31 @@ export async function deleteTranscription(id: string): Promise<void> {
   await deleteTranscriptions([id]);
 }
 
-/** Deletes transcriptions — a folder's, all at once: the records and their
- *  places in the tree in one write, then their recordings. */
+/** Deletes transcriptions — a folder's, all at once: the records, their places
+ *  in the tree and their Drive records in one write, then their recordings,
+ *  here and on Drive. The Drive file ids are read BEFORE the write, as the
+ *  analyser's deleteSessions does, and the files go to the Drive trash, not
+ *  away: a snapshot may still hold the transcription. Best-effort up there —
+ *  a Drive out of reach must not stop the deletion; a file left behind is the
+ *  orphans' sweep's (services/driveOrphans.ts), its name saying whose it was. */
 export async function deleteTranscriptions(ids: string[]): Promise<void> {
+  const synced = transcriptionModuleOf(appState.value)?.syncedAudio ?? {};
+  const driveFiles = ids.flatMap(id => (synced[id] ? [synced[id]!.fileId] : []));
   await mutate(s => {
-    editTranscriptionModule(s, m => { for (const id of ids) delete m.transcriptions[id]; });
+    editTranscriptionModule(s, m => {
+      for (const id of ids) delete m.transcriptions[id];
+      if (m.syncedAudio) {
+        for (const id of ids) delete m.syncedAudio[id];
+        if (Object.keys(m.syncedAudio).length === 0) delete m.syncedAudio;
+      }
+    });
     editTranscriptionTree(s, tree => { for (const id of ids) forgetSession(tree, id); });
   });
-  for (const id of ids) await deleteTranscriptionAudio(id);
+  for (const id of ids) {
+    await deleteTranscriptionAudio(id);
+    transcriptionAudio.forgetMarks(id);
+  }
+  for (const fileId of driveFiles) {
+    await trashCompanionFile(fileId).catch(e => console.warn('[transcription] could not trash a recording on Drive', e));
+  }
 }

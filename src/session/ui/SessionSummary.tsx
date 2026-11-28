@@ -31,7 +31,7 @@ import { showShareSessionModal } from './ShareSessionModal';
 import { showAnalysisNotesModal } from './AnalysisNotesModal';
 import { detectAudioFile } from '../audio/clipExtract';
 import { audioExtension } from '../../services/zip';
-import { fmtLongTime, TitleRow, DateRow } from './sessionUiShared';
+import { fmtLongTime, TitleRow, DateRow, NotOnDriveBtn, driveAudioStateOf, type DriveAudioState } from './sessionUiShared';
 import { ClipControls, recutAttachedClip } from './clips';
 import { repinReviewEntry, absorbReviewEntry, dropReviewEntry, repinSessionDate } from './reviewRetarget';
 import { AnalysisNav } from './AnalysisNav';
@@ -120,64 +120,9 @@ function DriveFetchBody({ progress, bytes }: { progress: Signal<number>; bytes: 
   );
 }
 
-/** Where this recording's Drive copy stands. Same readings as the header's own
- *  sync indicator, because it is the same question about a smaller thing. */
-type DriveAudioState = 'off' | 'uploading' | 'on' | 'error' | 'waiting' | 'wifi';
-
 /** A detection whose bounds an edit just moved — as committed — and where
  *  they were before: what re-pinning its rating and re-cutting its clip need. */
 type Moved = { ann: Detection; previous: { start: number; end: number | null } };
-
-const NOT_ON_DRIVE_TITLE: Record<Exclude<DriveAudioState, 'on'>, string> = {
-  off:       'sessions.syncAudio.off',
-  uploading: 'sessions.syncAudio.uploading',
-  error:     'sessions.syncAudio.retry',
-  // The automatic copy failed and will be tried again on its own (db.ts).
-  waiting:   'sessions.syncAudio.retryPending',
-  // Held until this device is on Wi-Fi, as it was told (db.ts).
-  wifi:      'sessions.syncAudio.waitingWifi',
-};
-
-/** The one state of a recording's whereabouts nothing else on the screen says
- *  (2026-11-05, the user's design): here but NOT on Drive. Here and on Drive is
- *  the ordinary case and shows nothing; on Drive only shows in the player's ▶;
- *  nowhere is the line under the views. So this is a cloud struck through, or
- *  on its way up, or failing — never a green one: a copy that is there is no
- *  news, and the green cloud that REMOVED the copy when touched is what this
- *  replaces. Touched, it offers the copy, confirmed.
- *
- *  Hover never changes the HUE, only its lightness: colour is state here, as on
- *  the header's indicator, and an accent-on-hover idle icon read as an upload
- *  started and stuck (2026-09-08). */
-function NotOnDriveBtn({ state, onClick }: { state: Exclude<DriveAudioState, 'on'>; onClick: () => void }) {
-  const uploading = state === 'uploading';
-  const tone =
-    uploading ? 'text-accent animate-pulse cursor-default' :
-    state === 'error' || state === 'waiting' ? 'text-danger cursor-pointer' :
-    // Not a failure: nothing went wrong, it is waiting as asked.
-    state === 'wifi' ? 'text-warn cursor-pointer' :
-    'text-dim hover:text-muted cursor-pointer';
-  const title = t(NOT_ON_DRIVE_TITLE[state] as Parameters<typeof t>[0]);
-  return (
-    <button
-      class={`relative icon-btn ${tone}`}
-      title={title}
-      aria-label={title}
-      disabled={uploading}
-      onClick={uploading ? undefined : onClick}
-    >
-      {uploading ? <CloudUpIcon size={16} /> : (
-        <>
-          {/* CloudIcon's outline, unfilled: icons.tsx has only the filled one. */}
-          <svg viewBox="0 0 24 24" width={16} height={16} fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true">
-            <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" />
-          </svg>
-          <span aria-hidden="true" class="absolute left-1/2 top-1/2 w-[19px] h-[1.5px] rounded bg-current -translate-x-1/2 -translate-y-1/2 -rotate-45" />
-        </>
-      )}
-    </button>
-  );
-}
 
 /** A detection row's key, which its card link passes as navigate's `from`
  *  (navOrigin.ts): two detections of one tune open the same card, and the way
@@ -447,14 +392,9 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
   // The automatic copy made when the recording was saved, or its retries: shown
   // here too, so that a recording stopped a moment ago reads as on its way
   // rather than as never copied.
-  const autoUpload = synced ? undefined : autoUploadState.value[session.id];
-  const driveAudioState: DriveAudioState =
-    busySync || autoUpload === 'uploading' ? 'uploading'
-      : syncFailed ? 'error'
-      : synced ? 'on'
-      : autoUpload === 'waiting' ? 'waiting'
-      : autoUpload === 'wifi' ? 'wifi'
-      : 'off';
+  const driveAudioState: DriveAudioState = driveAudioStateOf({
+    busy: busySync, failed: syncFailed, synced: !!synced, auto: autoUploadState.value[session.id],
+  });
 
   // ── Audio load: streamed via a native <audio> element (no
   // decodeAudioData/waveform — sessions can run for hours). Revokes the

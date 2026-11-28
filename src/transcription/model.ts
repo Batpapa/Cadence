@@ -1,5 +1,5 @@
 import type { Metre, Mode } from '../session/recognition/transcription';
-import type { SessionFolder } from '../session/model';
+import type { SessionFolder, SyncedAudio } from '../session/model';
 import { treeOfFields, writeTreeFields, type SessionTree } from '../session/sessionTree';
 
 // ── The Transcription module's data (2026-11-27) ─────────────────────────────
@@ -8,7 +8,8 @@ import { treeOfFields, writeTreeFields, type SessionTree } from '../session/sess
 // turned into a card or added to one. What is here is synced with the rest
 // of the user's blob (Drive, IndexedDB) under `modules.transcription`; the
 // recordings themselves are not — they live in the module's own local
-// database (audioDb.ts), as the analyser's do.
+// database (audioDb.ts), copied to Drive as files of their own (audioSync.ts),
+// as the analyser's are.
 //
 // ⚠️ Every name below is in users' data from the first release on: never
 // renamed (CLAUDE.md, "Un champ sérialisé ne se renomme pas"). Optional
@@ -29,6 +30,12 @@ export interface TranscriptionModuleData {
   folders?: Record<string, SessionFolder>;
   rootFolderIds?: string[];
   rootSessionIds?: string[];
+  /** The recordings copied to Drive, by transcription id — the analyser's
+   *  `syncedAudio`, same shape (session/companionAudio.ts). */
+  syncedAudio?: Record<string, SyncedAudio>;
+  /** Whether a new transcription's recording is copied to Drive. Absent: yes
+   *  (SYNC_AUDIO_BY_DEFAULT, as the analyser's) — so both values are written. */
+  syncAudioByDefault?: boolean;
 }
 
 /** Where a recording came from — the analyser's ways in. */

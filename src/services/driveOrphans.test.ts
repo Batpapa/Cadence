@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { findDriveOrphans, OrphanScanUnavailable } from './driveOrphans';
 import { TUNE_ANALYSER_MODULE_KEY } from '../session/model';
+import { TRANSCRIPTION_MODULE_KEY } from '../transcription/model';
 import type { AppState } from '../types';
 import type { DriveChild } from './driveService';
 
@@ -152,6 +153,29 @@ describe('what the server state protects', () => {
       child({ id: 'dropped', name: 'cadence-session-s2.webm' }),
     ]);
     expect((await findDriveOrphans('u1')).orphans.map(o => o.id)).toEqual(['dropped']);
+  });
+
+  // The Transcription module's recordings (2026-11-28): judged against its
+  // own records — and an analysis's record never protects one, nor the
+  // reverse, beyond the file it names.
+  it('spares a recording some transcription still points at', async () => {
+    drive.read = {
+      status: 'ok',
+      version: '1',
+      data: {
+        cards: {},
+        modules: {
+          [TUNE_ANALYSER_MODULE_KEY]: { syncedAudio: { s1: { fileId: 'rec-s1', mimeType: 'audio/webm', bytes: 10 } } },
+          [TRANSCRIPTION_MODULE_KEY]: { transcriptions: {}, syncedAudio: { t1: { fileId: 'rec-t1', mimeType: 'audio/webm', bytes: 10 } } },
+        },
+      } as unknown as AppState,
+    };
+    drive.children.set('root', [
+      child({ id: 'rec-s1', name: 'cadence-session-s1.webm' }),
+      child({ id: 'rec-t1', name: 'cadence-transcription-t1.webm' }),
+      child({ id: 'rec-t2', name: 'cadence-transcription-t2.m4a' }),
+    ]);
+    expect((await findDriveOrphans('u1')).orphans.map(o => o.id)).toEqual(['rec-t2']);
   });
 
   it('totals what would be freed', async () => {

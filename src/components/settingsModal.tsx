@@ -8,7 +8,8 @@ import { emptyState } from '../services/migration';
 import { ownFormatAccept } from '../services/device';
 import { deleteLocalSessionData, localSessionAudioStats, freeableSessionAudio, freeSyncedSessionAudio } from '../session/db';
 import { deleteLocalAttachmentData, localAttachmentBytes } from '../services/attachmentDb';
-import { deleteLocalTranscriptionData } from '../transcription/audioDb';
+import { deleteLocalTranscriptionData, localTranscriptionAudioStats } from '../transcription/audioDb';
+import { transcriptionAudio } from '../transcription/audioSync';
 import { TrashIcon, ResetIcon, HelpIcon, ExpandIcon, CollapseIcon, CrossIcon, PlusIcon, MinusIcon, UploadIcon, ImportTrayIcon, studyIconSvg } from './icons';
 import { IconButton, Switch } from './ui';
 import { initialsOf } from './initials';
@@ -843,7 +844,10 @@ function StorageSection({ userId }: { userId: string }) {
     // points at any more — are precisely the space nobody can otherwise
     // account for. The export figure, which counts only what it would write,
     // stays where it belongs, on the export dialog.
-    void localSessionAudioStats(userId).then(s => setAudioBytes(s?.bytes ?? 0));
+    // The transcriptions' recordings too (2026-11-28): the same kind of
+    // bytes, which a reset deletes along.
+    void Promise.all([localSessionAudioStats(userId), localTranscriptionAudioStats(userId)])
+      .then(([s, tr]) => setAudioBytes((s?.bytes ?? 0) + (tr?.bytes ?? 0)));
     // Swept before being counted. Deleting an attachment deliberately leaves
     // its bytes here — a snapshot taken before the deletion still needs them,
     // and the sweep is the only thing that knows — but until now that sweep
@@ -1020,8 +1024,8 @@ function FreeSpaceRow({ tick, onFreed }: { tick: number; onFreed: () => void }) 
 
   useEffect(() => {
     if (!driveOn) { setBytes(null); return; }
-    void Promise.all([freeableAttachments(appState.value), freeableSessionAudio()])
-      .then(([a, s]) => setBytes(a.bytes + s.bytes))
+    void Promise.all([freeableAttachments(appState.value), freeableSessionAudio(), transcriptionAudio.freeable()])
+      .then(([a, s, tr]) => setBytes(a.bytes + s.bytes + tr.bytes))
       .catch(() => setBytes(null));
   }, [appState.value, driveOn, tick]);
 
@@ -1030,7 +1034,7 @@ function FreeSpaceRow({ tick, onFreed }: { tick: number; onFreed: () => void }) 
 
   const free = () => {
     setBusy(true);
-    void Promise.all([freeUploadedAttachments(appState.value), freeSyncedSessionAudio()])
+    void Promise.all([freeUploadedAttachments(appState.value), freeSyncedSessionAudio(), transcriptionAudio.freeSynced()])
       .finally(() => { setBusy(false); onFreed(); });
   };
 
@@ -1217,7 +1221,7 @@ function UserSection({ ctx }: { ctx: AppContext }) {
     else {
       parts.push(t('settings.removeUser.synced'));
       if (getDriveStatus() !== 'connected') parts.push(t('settings.removeUser.unsynced'));
-      if (await localSessionAudioStats(user.id)) parts.push(t('settings.removeUser.audio'));
+      if (await localSessionAudioStats(user.id) || await localTranscriptionAudioStats(user.id)) parts.push(t('settings.removeUser.audio'));
     }
     confirmModal(
       t('settings.removeUser'), parts.join(' '), t('settings.removeUser.confirm'),
