@@ -25,5 +25,15 @@ export const repeatIcon =(size = 12): string =>
 export const boundIcon = (side: 'in' | 'out', size = 14): string =>
   `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><g${side === 'out' ? ' transform="matrix(-1 0 0 1 24 0)"' : ''}><path d="M7 4H4v16h3"/><path d="M20 12H9"/><polyline points="13 8 9 12 13 16"/></g></svg>`;
 
+/** A quaver: the score's own notes heard over the recording (the audio
+ *  sync's voice, 2026-11-28). */
+export const noteIcon = (size = 14): string =>
+  `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l8 3"/><circle cx="6" cy="18" r="3"/></svg>`;
+
+/** The passage's bounds taken off: the cross the score viewer's transport has
+ *  (abcViewer.ts, CrossIcon), for the audio player's too (2026-11-28, the user). */
+export const crossIcon = (size = 14): string =>
+  `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+
 export const downloadIcon =(size = 12): string =>
   `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;

@@ -10,6 +10,7 @@ import { setDateFormatPref } from './services/dateFormat';
 import { closeTopOverlay } from './components/overlayStack';
 import { sessionsOf } from './session/detections';
 import { sessionTreeOf } from './session/sessionTree';
+import { transcriptionModuleOf } from './transcription/model';
 
 export const appState    = signal<AppState>(emptyState());
 export const routeSignal = signal<Route>({ view: 'folder', folderId: null });
@@ -41,6 +42,8 @@ function isValidRoute(route: Route, user: AppState): boolean {
     case 'sessions': return (!route.sessionId || !!sessionsOf(user)[route.sessionId])
       && (!route.folder || !!sessionTreeOf(user).folders[route.folder]);
     case 'trending': return true;
+    case 'transcriptions': return (!route.id || !!transcriptionModuleOf(user)?.transcriptions[route.id])
+      && (!route.folder || !!transcriptionModuleOf(user)?.folders?.[route.folder]);
   }
 }
 

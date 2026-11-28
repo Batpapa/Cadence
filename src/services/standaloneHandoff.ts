@@ -73,7 +73,7 @@ export async function importStagedAnalyses(ctx: AppContext): Promise<void> {
   // be in a module nowhere to be seen.
   if (!tuneAnalyserOffered()) {
     await ctx.mutate(s => {
-      s.extensions = { ...s.extensions, irishTrad: true };
+      s.extensions = { ...s.extensions, music: true, irishTrad: true };
       s.extensionOptions = { ...s.extensionOptions, irishTrad: { ...s.extensionOptions?.irishTrad, tuneAnalyser: true } };
     });
   }

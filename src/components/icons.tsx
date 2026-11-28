@@ -404,6 +404,20 @@ export function starIconElement(filled: boolean, size = 13): Element {
   return wrap.firstElementChild ?? wrap;
 }
 
+/** The Transcription module: a sound becoming a note — the waveform's bars on
+ *  the left, a quaver on the right. */
+export function TranscribeIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="2" y1="10" x2="2" y2="14"/>
+      <line x1="5" y1="6" x2="5" y2="18"/>
+      <line x1="8" y1="9" x2="8" y2="15"/>
+      <path d="M15 18V5l6 2"/>
+      <circle cx="13" cy="18" r="2.2"/>
+    </svg>
+  );
+}
+
 export function MusicNoteIcon({ size = 12 }: { size?: number }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

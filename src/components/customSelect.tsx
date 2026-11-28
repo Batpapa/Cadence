@@ -23,7 +23,7 @@ const PANEL_MAX_H = 208; // matches max-h-52
  *  nearer than the list is tall and there is more room above. */
 type PanelPos = { left: number; width: number; maxHeight: number } & ({ top: number } | { bottom: number });
 
-export function CustomSelect({ value, options, onChange, triggerClass, renderTrigger, align = 'left' }: {
+export function CustomSelect({ value, options, onChange, triggerClass, renderTrigger, align = 'left', ariaLabel }: {
   value: string;
   options: Array<{ value: string; label: string }>;
   onChange: (v: string) => void;
@@ -34,6 +34,9 @@ export function CustomSelect({ value, options, onChange, triggerClass, renderTri
    *  line — the analyser settings' network choice — whose list would
    *  otherwise hang out past the card it belongs to (2026-10-09). */
   align?: 'left' | 'right';
+  /** The trigger's name for a screen reader, when no label names it: two
+   *  selects side by side (a transcription's tonic and mode, 2026-11-28). */
+  ariaLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   // Where the panel goes once it is out of the flow — see the portal below.
@@ -107,7 +110,7 @@ export function CustomSelect({ value, options, onChange, triggerClass, renderTri
   return (
     <div class="relative" ref={ref}>
       {renderTrigger ? renderTrigger(label, open, toggle) : (
-        <button type="button" class={triggerClass} onClick={toggle}>
+        <button type="button" class={triggerClass} onClick={toggle} aria-label={ariaLabel ? `${ariaLabel} : ${label}` : undefined} aria-expanded={open}>
           <span class="truncate flex-1 text-left">{label}</span>
           <span class={`shrink-0 flex transition-transform ${open ? 'rotate-180' : ''}`}><ChevronDownIcon size={12} /></span>
         </button>

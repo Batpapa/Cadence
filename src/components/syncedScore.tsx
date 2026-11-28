@@ -10,6 +10,12 @@ import { appState } from '../store';
 import { WakeLockManager } from '../services/wakeLock';
 import type { ScoreFace } from '../types';
 import { bindFaceSplit, type FaceSplit } from './faceSplit';
+import { playTap, stopTap, tapTracks, type MidiPitch } from '../services/abcTapNote';
+
+/** The voice's notes, written lengths at this pace — a quaver half a second,
+ *  clamped by tapTracks — and each cut short by the next one heard: the
+ *  recording sets the time, not the score's Q:. */
+const VOICE_SECONDS_PER_WHOLE = 4;
 
 // ── A score that follows a recording ─────────────────────────────────────────
 // Drawn above the audio player's waveform when the player is given a score
@@ -29,7 +35,7 @@ import { bindFaceSplit, type FaceSplit } from './faceSplit';
 interface NoteEvent {
   milliseconds: number; millisecondsPerMeasure: number;
   left: number; top: number; height: number; elements?: Element[][];
-  midiPitches?: { pitch: number }[];
+  midiPitches?: MidiPitch[];
   /** Where the note is in the ABC text — every note of a chord. */
   startCharArray?: number[]; endCharArray?: number[];
 }
@@ -199,6 +205,9 @@ export interface SyncedScoreProps {
   /** Semitones the score is drawn up or down — the player's transposition. */
   transpose: number;
   playing: boolean;
+  /** Each note sounded on the synth as the cursor reaches it, over the
+   *  recording (2026-11-28, the user: to correct a transcription by ear). */
+  voice?: boolean;
   /** The score box's height cap (CSS). */
   maxHeight: string;
   /** Its floor (CSS), 8rem unless said: a full page gives it its whole
@@ -227,7 +236,7 @@ export interface SyncedScoreProps {
   editor?: ScoreEditor;
 }
 
-export function SyncedScore({ abc, meter, follow, engine, region, transpose, playing, maxHeight, minHeight = '8rem', face = 'sheet', tools, clock, fill = false, editor }: SyncedScoreProps) {
+export function SyncedScore({ abc, meter, follow, engine, region, transpose, playing, voice = false, maxHeight, minHeight = '8rem', face = 'sheet', tools, clock, fill = false, editor }: SyncedScoreProps) {
   const paperRef = useRef<HTMLDivElement>(null);
   /** What abcjs draws into, inside the paper — never the paper itself: abcjs
    *  writes `overflow: hidden` and a height on its target, and the score,
@@ -254,8 +263,13 @@ export function SyncedScore({ abc, meter, follow, engine, region, transpose, pla
   const lit = useRef<Element[]>([]);
   const lastTop = useRef<number | null>(null);
   // What the animation frame reads: never a render's copy.
-  const live = useRef({ follow, engine, region, clock });
-  live.current = { follow, engine, region, clock };
+  const live = useRef({ follow, engine, region, clock, playing, voice });
+  live.current = { follow, engine, region, clock, playing, voice };
+  /** abcjs, once loaded for the drawing: what the voice plays with. */
+  const abcjsRef = useRef<typeof import('abcjs') | null>(null);
+  // The voice off, or the music stopped: the note sounding is cut.
+  useEffect(() => { if (!voice || !playing) stopTap(); }, [voice, playing]);
+  useEffect(() => () => stopTap(), []);
   /** Forces the next frame to redraw everything. */
   const dirty = useRef(true);
   const colours = ABC_PAPERS[abcPaper(appState.value)];
@@ -341,6 +355,7 @@ export function SyncedScore({ abc, meter, follow, engine, region, transpose, pla
     if (!width) return;
     let cancelled = false;
     void import('abcjs').then((abcjs) => {
+      abcjsRef.current = abcjs;
       const drawing = drawingRef.current;
       if (cancelled || !drawing) return;
       lit.current = [];
@@ -442,6 +457,8 @@ export function SyncedScore({ abc, meter, follow, engine, region, transpose, pla
   // ran while playing would miss those.
   useEffect(() => {
     let raf = 0, lastPos = -1;
+    /** The note the voice sounded last, to sound each one once. */
+    let voiced: NoteEvent | null = null;
     let lastQuaver: number | null = -1;
     /** The note drawn for an instant of the recording, and where along it. */
     const noteAt = (tl: Timeline, f: FollowResult, t: number) => {
@@ -574,6 +591,15 @@ export function SyncedScore({ abc, meter, follow, engine, region, transpose, pla
       for (const el of lit.current) el.classList.remove('abcjs-highlight');
       lit.current = [];
       const at = noteAt(tl, f, now);
+      // The voice: the note the cursor has just reached, sounded once — its
+      // pitches as drawn, cut short by the next (abcTapNote.ts's playTap).
+      const ev = at?.ev ?? null;
+      if (ev !== voiced) {
+        voiced = ev;
+        const { voice: on, playing: going } = live.current;
+        const lib = abcjsRef.current;
+        if (on && going && lib && ev?.midiPitches?.length) playTap(lib, tapTracks(ev.midiPitches, null, VOICE_SECONDS_PER_WHOLE, appState.value.abcInstrument));
+      }
       if (dirty.current) {
         // The region's notes in the text, for the text face's brackets.
         const bound = (t: number) => trimmed(abcRef.current, charRange(noteAt(tl, f, t)?.ev ?? null));

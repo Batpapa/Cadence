@@ -46,8 +46,8 @@ import type { Detection, DetectionAlternate } from '../model';
  *  literal truth: nothing observed this). Its identity fields are never read —
  *  the identity slot replaces the only line that would show them — and it is
  *  built once, so moving a bound or picking a tune never resets the frame the
- *  editor opened on. */
-function draftDetection(start: number, end: number): Detection {
+ *  editor opened on. Also the Transcription module's passage (2026-11-27). */
+export function draftDetection(start: number, end: number): Detection {
   const nothing = { tuneId: '', settingId: '', displayName: '', dance: '', meter: '', meanScore: 0 };
   return {
     id: 'draft', ...nothing, start, end,

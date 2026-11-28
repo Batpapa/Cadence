@@ -875,8 +875,9 @@ function importDescKey(): string {
  *  they used to wear per row warned of nothing and succeeded at nothing. */
 const ICON_SIZE = 20;
 /** A page with a pencil — "start a blank one". No icon in icons.tsx draws it
- *  (PencilIcon is the bare pencil of "rename"), so it stays here. */
-const ICON_CREATE = `<svg width="${ICON_SIZE}" height="${ICON_SIZE}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
+ *  (PencilIcon is the bare pencil of "rename"), so it stays here; the
+ *  transcription's "New card" wears it too (transcription/ui/cardModals.tsx). */
+export const ICON_CREATE = `<svg width="${ICON_SIZE}" height="${ICON_SIZE}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
 
 const nextStep = <ArrowRightIcon size={16} />;
 

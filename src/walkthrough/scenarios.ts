@@ -3,7 +3,8 @@ import type { User } from '../types';
 import { pickOptimal } from '../services/deckService';
 import { isDriveFeatureEnabled } from '../services/driveService';
 import { onScreen, type TourTarget } from './targets';
-import { irishTradEnabled, theSessionOffered, irishTuneInfoOffered, tuneAnalyserOffered, trendingOffered, type ExtensionId } from '../services/extensions';
+import { irishTradEnabled, theSessionOffered, irishTuneInfoOffered, tuneAnalyserOffered, trendingOffered, cardTypesOffered, transcriptionOffered, type ExtensionId } from '../services/extensions';
+import { transcriptionsOf } from '../transcription/model';
 import { sessionsOf } from '../session/detections';
 import { CARD_TYPE_TUNE, isTuneset } from '../services/cardTypeService';
 import { decksInSidebarOrder, revealDeckInSidebar } from '../components/sidebar';
@@ -214,7 +215,8 @@ export const SCENARIOS: ReadonlyArray<Scenario> = [
         { target: 'card-name', titleKey: 'walkthrough.createCard.cardName.title', textKey: 'walkthrough.createCard.cardName.text' },
         { target: 'card-decks', titleKey: 'walkthrough.createCard.cardDecks.title', textKey: 'walkthrough.createCard.cardDecks.text' },
         { target: 'card-tags', titleKey: 'walkthrough.createCard.tags.title', textKey: 'walkthrough.createCard.tags.text' },
-        { target: 'card-type', titleKey: 'walkthrough.createCard.type.title', textKey: 'walkthrough.createCard.type.text' },
+        // The type only where there are types to choose (the Music extension).
+        { target: 'card-type', titleKey: 'walkthrough.createCard.type.title', textKey: 'walkthrough.createCard.type.text', available: () => cardTypesOffered() },
         { target: 'card-notes-edit', action: 'click', titleKey: 'walkthrough.createCard.notes.title', textKey: 'walkthrough.createCard.notes.edit' },
         { target: 'card-notes-text', action: 'do', titleKey: 'walkthrough.createCard.notes.title', textKey: 'walkthrough.createCard.notes.write' },
         { target: 'card-notes-edit', action: 'click', titleKey: 'walkthrough.createCard.notes.title', textKey: 'walkthrough.createCard.notes.save' },
@@ -533,6 +535,32 @@ export const SCENARIOS: ReadonlyArray<Scenario> = [
         { target: 'summary-audio', optional: true, titleKey: 'walkthrough.analyser.audio.title', textKey: 'walkthrough.analyser.audio.text', available: hasAnalyses },
         { target: 'detection', titleKey: 'walkthrough.analyser.detection.title', textKey: 'walkthrough.analyser.detection.text', available: hasAnalyses },
         { target: 'detection', titleKey: 'walkthrough.analyser.detectedIn.title', textKey: 'walkthrough.analyser.detectedIn.text', available: hasAnalyses },
+      ];
+    },
+  },
+
+  // ── Music (services/extensions.ts) ──
+  {
+    id: 'transcription',
+    titleKey: 'walkthrough.transcription.title',
+    descKey: 'walkthrough.transcription.desc',
+    extension: 'music',
+    offered: transcriptionOffered,
+    // Records nothing and transcribes nothing, as the analyser's: a take wants
+    // the microphone, a file one picked from the device. An existing
+    // transcription is gone into.
+    steps: () => {
+      const hasOne = () => transcriptionsOf(appState.value).length > 0;
+      return [
+        { target: 'nav-modules', action: 'click', titleKey: 'walkthrough.transcription.modules.title', textKey: 'walkthrough.transcription.modules.text' },
+        { target: 'module-transcriptions', action: 'click', deny: ['module-pin-transcriptions'], titleKey: 'walkthrough.transcription.open.title', textKey: 'walkthrough.transcription.open.text' },
+        { target: 'transcription-start', titleKey: 'walkthrough.transcription.start.title', textKey: 'walkthrough.transcription.start.text' },
+        { target: 'transcription-start', titleKey: 'walkthrough.transcription.first.title', textKey: 'walkthrough.transcription.first.text', available: () => !hasOne() },
+        { target: 'transcription-row', action: 'click', titleKey: 'walkthrough.transcription.row.title', textKey: 'walkthrough.transcription.row.text', available: hasOne },
+        { target: 'abc-tabs', titleKey: 'walkthrough.transcription.faces.title', textKey: 'walkthrough.transcription.faces.text', available: hasOne },
+        { target: 'abc-sources', optional: true, titleKey: 'walkthrough.transcription.sync.title', textKey: 'walkthrough.transcription.sync.text', available: hasOne },
+        { target: 'summary-audio', titleKey: 'walkthrough.transcription.menu.title', textKey: 'walkthrough.transcription.menu.text', available: hasOne },
+        { target: 'transcription-to-card', titleKey: 'walkthrough.transcription.toCard.title', textKey: 'walkthrough.transcription.toCard.text', available: hasOne },
       ];
     },
   },

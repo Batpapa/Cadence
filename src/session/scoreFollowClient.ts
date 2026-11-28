@@ -2,6 +2,8 @@ import type { FollowResult } from './scoreFollow';
 import { NoveltyStore } from './liveTempo';
 import type { ScoreFollowRequest, ScoreFollowResponse, FollowFailure, FollowStage, HeardSpan } from './recognition/scoreFollowWorker';
 
+import type { TranscribeSettings } from './recognition/transcribeAudio';
+
 export type { FollowFailure } from './recognition/scoreFollowWorker';
 
 // ── Following a score in its recording ───────────────────────────────────────
@@ -238,20 +240,34 @@ export function tempoOfSpan(
   });
 }
 
-/** What a transcription gave: the ABC (M:, L:, Q:, K: and the tune), or a
- *  recording too long to be followed whole afterwards (`seconds`, at most
- *  `max`). */
-export type Transcription = { abc: string } | { tooLong: number; max: number };
+/** [from, to) of `audio` decoded in the worker, mono at its own rate — for a
+ *  player: a transcription's passage being chosen (transcription/ui/setup.tsx).
+ *  Null when it cannot be decoded here. `signal` as followAudio's. */
+export function decodeAudioSpan(audio: Blob, from: number, to: number, signal?: AbortSignal): Promise<FollowSamples | null> {
+  const request: ScoreFollowRequest = { type: 'decode', audio, from, to };
+  return runFollowWorker<FollowSamples | null>(request, signal, (msg, end) => {
+    if (msg.type === 'progress') return;
+    if (msg.type === 'decoded') end.resolve({ pcm: msg.pcm, rate: msg.rate, from: msg.from });
+    else if (msg.type === 'failed') end.resolve(null);
+    else end.reject(unexpected(msg));
+  });
+}
 
-/** The whole of `audio` written out as ABC, in the worker
- *  (scoreFollowWorker.ts transcribe). `onRatio` 0 to 1: the decoding, then
- *  the listening. `signal` as followAudio's. */
-export function transcribeAudio(audio: Blob, onRatio?: (r: number) => void, signal?: AbortSignal): Promise<Transcription | FollowFailure> {
-  const request: ScoreFollowRequest = { type: 'transcribe', audio };
+/** What a transcription gave: the ABC (M:, L:, Q:, K: and the tune). */
+export type Transcription = { abc: string };
+
+/** What to write out of a recording: [from, to) in seconds (the whole of it
+ *  when absent), and what the user said of it (transcribeAudio.ts). */
+export interface TranscribeRequest { from?: number; to?: number; settings?: TranscribeSettings }
+
+/** `audio` written out as ABC, in the worker (scoreFollowWorker.ts
+ *  transcribe). `onRatio` 0 to 1: the decoding, then the listening. `signal`
+ *  as followAudio's. */
+export function transcribeAudio(audio: Blob, onRatio?: (r: number) => void, signal?: AbortSignal, what: TranscribeRequest = {}): Promise<Transcription | FollowFailure> {
+  const request: ScoreFollowRequest = { type: 'transcribe', audio, ...what };
   return runFollowWorker<Transcription | FollowFailure>(request, signal, (msg, end) => {
     if (msg.type === 'progress') { onRatio?.(msg.stage === 'decode' ? msg.ratio / 2 : 0.5 + msg.ratio / 2); return; }
     if (msg.type === 'transcribed') end.resolve({ abc: msg.abc });
-    else if (msg.type === 'too-long') end.resolve({ tooLong: msg.seconds, max: msg.max });
     else if (msg.type === 'failed') end.resolve(msg.reason);
     else end.reject(unexpected(msg));
   });

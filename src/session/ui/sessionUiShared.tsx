@@ -103,7 +103,7 @@ export function fmtEta(etaS: number): string {
  *  heading that turns into an input on click, plus a delete button — no back
  *  arrow. `getName`/`getDefaultName` abstract over Analysis/LiveSession/
  *  ImportSession, which don't share a base type. */
-export function TitleRow({ getName, getDefaultName, onRename, onDelete, menu, onNotes, hasNotes }: {
+export function TitleRow({ getName, getDefaultName, onRename, onDelete, menu, onNotes, hasNotes, deleteTexts }: {
   getName: () => string;
   getDefaultName: () => string;
   onRename: (name: string) => void;
@@ -116,6 +116,9 @@ export function TitleRow({ getName, getDefaultName, onRename, onDelete, menu, on
   onNotes?: () => void;
   /** Lights the notes button, so a note is known to be there without opening it. */
   hasNotes?: boolean;
+  /** The bin's tooltip and its question, when what it deletes is not an
+   *  analysis: a transcription (transcription/ui/screen.tsx, 2026-11-28). */
+  deleteTexts?: { label: string; title: string; message: string; confirm?: string };
 }) {
   // The deck-target button that used to sit here is gone (2026-09-06). It set a
   // destination once for the whole page, which every later add then applied in
@@ -190,12 +193,12 @@ export function TitleRow({ getName, getDefaultName, onRename, onDelete, menu, on
       {/* The one delete of an analysis — costly to redo, so red and confirmed.
          The ⋯ beside it only offers what can be done with its recording. */}
       <IconButton
-        label={t('sessions.deleteTitle')}
+        label={deleteTexts?.label ?? t('sessions.deleteTitle')}
         variant="danger"
         onClick={() => confirmModal(
-          t('sessions.delete.title'),
-          t('sessions.delete.message', { name: getName() || getDefaultName() }),
-          t('common.delete'),
+          deleteTexts?.title ?? t('sessions.delete.title'),
+          deleteTexts?.message ?? t('sessions.delete.message', { name: getName() || getDefaultName() }),
+          deleteTexts?.confirm ?? t('common.delete'),
           onDelete,
         )}
       >

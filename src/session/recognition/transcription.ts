@@ -1,5 +1,5 @@
 // ── A recording written out as ABC ───────────────────────────────────────────
-// The hidden transcription (2026-11-23, the user; transcribeRecording.tsx): the notes the
+// The Transcription module (hidden from 2026-11-23, a module since 2026-11-27): the notes the
 // transcription's own decoder hears (transcriptor/src — each note
 // a pitch class with the energy of each of its octaves, as FolkFriend's fork gave them until
 // 2026-11-24), turned into a tune: octaves, quavers, repeated notes, metre, bars, key, then
@@ -333,8 +333,10 @@ const BROKEN_PAIRS = 8;
 
 /** `notes` with their broken pairs marked; `onsets`: the heard onset frame of the notes at
  *  each grid index (a note split off a repeated one starts on its grid point). */
-function brokenPairs(notes: GridNote[], onsets: Map<number, number>, bars: boolean[], grid: number[], metre: Metre): GridNote[] {
-  if (metre !== '4/4') return notes;
+function brokenPairs(notes: GridNote[], onsets: Map<number, number>, bars: boolean[], grid: number[], metre: MetreShape): GridNote[] {
+  // in crotchet beats, an even number of them — 4/4, 2/4 — or cut time (not 3/4, nor a
+  // compound metre)
+  if (!asFourFour(metre) && !(metre.beats.length % 2 === 0 && metre.beats.every(b => b === 2))) return notes;
   const onset = (n: GridNote): number => onsets.get(n.at) ?? grid[n.at]!;
   // r of each pair a, b of quavers in a bar, c on the next quaver
   const ratio = notes.map((a, i): number | null => {
@@ -367,8 +369,72 @@ function brokenPairs(notes: GridNote[], onsets: Map<number, number>, bars: boole
 // quavers (4 and 8 bars of a jig) against 32, 64 (of a reel). 95.1 % right, cross-validated
 // by session, with no weight fitted (1 and 0 came out of the fit anyway). 9/8 and 12/8 could
 // not be told from 6/8 (4 and 2 examples): written 6/8.
+//
+// The other metres are never guessed: they are the user's to give (the Transcription module's
+// settings, 2026-11-27 — a dance, or a metre), and `transcribe` then writes the tune in that one.
 
-export type Metre = '4/4' | '6/8';
+/** A metre as ABC's M: field writes it: "4/4", "6/8", "5/8", "2+2+3/8", "3/2", "C", "C|".
+ *  Any one, since 2026-11-28 (the user: not a finite list) — read by parseMetre. */
+export type Metre = string;
+
+/** What a metre means here: its bar and its beats, in quavers (the grid's step, L:1/8). */
+export interface MetreShape {
+  /** As written in M:. */
+  text: string;
+  /** Quavers a bar. */
+  bar: number;
+  /** Each beat's quavers, in order: a beat starts a beam (writeAbc) and has an accent (barStarts). */
+  beats: number[];
+  /** The note a beat is: 2 (minim), 4 (crotchet) or 8 (quaver), from M:'s lower figure. */
+  unit: number;
+}
+
+/** The longest bar written: 4 bars of 4/4. */
+const MAX_BAR = 32;
+
+/** `text` as a metre, or null when it is not one this writer can lay on its quaver grid: the
+ *  lower figure 2, 4 or 8; the upper a number or beats added ("2+2+3", how ABC groups the
+ *  irregular ones); C for 4/4 and C| for 2/2. A compound metre (6/8, 9/8, 12/8) beats in dotted
+ *  crotchets; another upper figure over 8 (5/8, 7/8) in twos ending with a three, unless it
+ *  says its beats. */
+export function parseMetre(text: string): MetreShape | null {
+  const written = text.trim().replace(/\s+/g, '');
+  const plain = written === 'C' ? '4/4' : written === 'C|' ? '2/2' : written;
+  const m = /^(\d{1,2}(?:\+\d{1,2})*)\/(2|4|8)$/.exec(plain);
+  if (!m) return null;
+  const unit = Number(m[2]);
+  const per = 8 / unit;
+  const groups = m[1]!.split('+').map(Number);
+  if (groups.some(g => g < 1)) return null;
+  const n = groups.reduce((a, b) => a + b, 0);
+  let beats: number[];
+  if (groups.length > 1) beats = groups.map(g => g * per);
+  else if (unit === 8 && n % 3 === 0 && n >= 6) beats = Array.from({ length: n / 3 }, () => 3);
+  else if (unit === 8) beats = n <= 3 ? [n] : [...Array.from({ length: Math.floor(n / 2) - (n % 2) }, () => 2), ...(n % 2 ? [3] : [])];
+  else beats = Array.from({ length: n }, () => per);
+  const bar = n * per;
+  if (bar < 2 || bar > MAX_BAR) return null;
+  return { text: written, bar, beats, unit };
+}
+
+/** Three quavers a beat (3/8, 6/8, 9/8, 12/8), not two. */
+export function compound(metre: MetreShape): boolean {
+  return metre.unit === 8 && metre.beats.every(b => b === 3);
+}
+
+/** 4/4 by another name — C, and the cut time players write the same tunes in (2/2, C|):
+ *  the measured accents and the broken pairs of 4/4 hold for them (the review of 2026-11-28). */
+function asFourFour(metre: MetreShape): boolean {
+  return metre.bar === 8 && (metre.beats.every(b => b === 2) || metre.beats.every(b => b === 4));
+}
+
+/** Where each beat starts in a bar, in quavers. */
+function beatStarts(metre: MetreShape): number[] {
+  const out: number[] = [];
+  let at = 0;
+  for (const b of metre.beats) { out.push(at); at += b; }
+  return out;
+}
 
 /** The autocorrelation of `x` at a fractional lag, over its variance. */
 function autocorrelation(x: ArrayLike<number>, mean: number, L: number): number {
@@ -398,7 +464,7 @@ function chromaSimilarity(chroma: Float32Array, norms: Float32Array, L: number):
 
 /** The metre of a recording: its novelty, its 48-note energies (frames x PITCHES), the
  *  quaver period in frames. */
-export function metreOf(novelty: ArrayLike<number>, features: Float32Array, P: number): Metre {
+export function metreOf(novelty: ArrayLike<number>, features: Float32Array, P: number): '4/4' | '6/8' {
   const n = novelty.length;
   let mean = 0;
   for (let t = 0; t < n; t++) mean += novelty[t]!;
@@ -440,13 +506,27 @@ export function metreOf(novelty: ArrayLike<number>, features: Float32Array, P: n
 // on 60 s (chance 14 %; the best fixed phase 76 %), within half a bar 71 / 74 %. A learned
 // model (structured perceptron, cross-validated) did no better.
 
-const PATTERN: Record<Metre, number[]> = { '4/4': [4, 0, 1, 0, 2, 0, 1, 0], '6/8': [3, 0, 0, 2, 0, 0] };
+// The given metres (never guessed) on the same plan: the bar's first beat strongest, the others
+// as in the two measured patterns; not measured on their own (no corpus of them yet).
+const MEASURED: Record<string, number[]> = { '4/4': [4, 0, 1, 0, 2, 0, 1, 0], '6/8': [3, 0, 0, 2, 0, 0] };
+
+/** The weight of each quaver of a bar: the measured 4/4 and 6/8; any other metre by the rule
+ *  they and the earlier table (2/4, 3/4, 9/8, 12/8) follow — the first beat 3, or 4 with four
+ *  beats or more, the middle one 2 when the beats are even and four or more, the others 1. */
+function patternOf(metre: MetreShape): number[] {
+  const measured = asFourFour(metre) ? MEASURED['4/4'] : MEASURED[metre.text];
+  if (measured) return measured;
+  const out = new Array<number>(metre.bar).fill(0);
+  const starts = beatStarts(metre), B = starts.length;
+  starts.forEach((at, i) => { out[at] = i === 0 ? (B >= 4 ? 4 : 3) : B >= 4 && B % 2 === 0 && i === B / 2 ? 2 : 1; });
+  return out;
+}
 const LENGTH_WEIGHT = 0.3;
 const SLIP = 20;
 
 /** For each grid position, whether a bar starts there. */
-function barStarts(notes: GridNote[], gridLength: number, grid: number[], novelty: ArrayLike<number>, metre: Metre): boolean[] {
-  const B = PATTERN[metre].length, pattern = PATTERN[metre];
+function barStarts(notes: GridNote[], gridLength: number, grid: number[], novelty: ArrayLike<number>, metre: MetreShape): boolean[] {
+  const pattern = patternOf(metre), B = pattern.length;
   const accent = new Float64Array(gridLength), length = new Float64Array(gridLength);
   for (const n of notes) { accent[n.at] = accentAt(novelty, grid[n.at]!); length[n.at] = n.quavers - 1; }
   let sum = 0, count = 0;
@@ -500,8 +580,9 @@ export interface Transcription {
  *  `features` (frames x PITCHES), or that mixed with the decoder's onset function;
  *  `metreNovelty`: what the metre reads (liveTempo's Novelty: the metre's rule was fitted on
  *  its accents); all at `fps` frames a second, the same frames; `rate`: the quaver rate
- *  (liveTempo's estimateRate). Null when no tune was heard. */
-export function transcribe(classes: ArrayLike<number>, novelty: ArrayLike<number>, features: Float32Array, fps: number, rate: number, metreNovelty: ArrayLike<number> = novelty): Transcription | null {
+ *  (liveTempo's estimateRate); `given`: the metre when the user gave one, else it is told from
+ *  the recording (4/4 or 6/8). Null when no tune was heard. */
+export function transcribe(classes: ArrayLike<number>, novelty: ArrayLike<number>, features: Float32Array, fps: number, rate: number, metreNovelty: ArrayLike<number> = novelty, given?: Metre): Transcription | null {
   const heard = withOctaves(classNotes(classes));
   if (heard.length < 2 || !(rate > 0)) return null;
   const P = fps / rate;
@@ -511,24 +592,25 @@ export function transcribe(classes: ArrayLike<number>, novelty: ArrayLike<number
   // a grid index past the grid (notes crowding its end) reads its last point
   const frameOf = [...grid];
   while (frameOf.length < placed[placed.length - 1]!.at + 1) frameOf.push(grid[grid.length - 1]!);
-  const metre = metreOf(metreNovelty, features, P);
+  // a metre given that this writer cannot lay out is as none given
+  const metre = (given !== undefined ? parseMetre(given) : null) ?? parseMetre(metreOf(metreNovelty, features, P))!;
   const last = placed[placed.length - 1]!;
   // the bars from the notes as heard (measured so), before the repeated notes are split
   const bars = barStarts(placed, last.at + last.quavers, frameOf, novelty, metre);
   const onsets = new Map(placed.map((n, i) => [n.at, heard[i]!.start]));
   const notes = brokenPairs(splitRepeats(placed, frameOf, novelty, features), onsets, bars, frameOf, metre);
-  return { notes: toBarEnd(notes, bars, metre), bars, grid: frameOf, metre, rate };
+  return { notes: toBarEnd(notes, bars, metre), bars, grid: frameOf, metre: metre.text, rate };
 }
 
 /** The last note held to the end of its bar, as a tune's last note is written ("A4"), not
  *  only as long as it sounded (the decoder hears where the sound stops). */
-function toBarEnd(notes: GridNote[], bars: boolean[], metre: Metre): GridNote[] {
+function toBarEnd(notes: GridNote[], bars: boolean[], metre: MetreShape): GridNote[] {
   const last = notes[notes.length - 1];
   if (!last) return notes;
   let start = -1;
   for (let k = Math.min(Math.floor(last.at), bars.length - 1); k >= 0; k--) if (bars[k]) { start = k; break; }
   if (start < 0) return notes;
-  const end = start + PATTERN[metre].length;
+  const end = start + metre.bar;
   if (end <= last.at + last.quavers) return notes;
   const quavers = end - last.at;
   return [...notes.slice(0, -1), { ...last, quavers, sounds: quavers }];
@@ -565,7 +647,39 @@ export interface Key {
 
 export function makeKey(tonic: number, mode: Mode): Key {
   const parent = (((tonic - MODE_DEGREE[mode].semitones) % 12) + 12) % 12;
-  const name = MAJOR_NAME[parent]!;
+  // Six sharps or six flats (F# or Gb major): the one naming the tonic as its major key is
+  // named — Eb minor, Ab dorian, not D# minor, G# dorian (the user, 2026-11-28: the circle of
+  // fifths' names, D# == Eb written Eb).
+  if (parent === 6 && mode !== 'maj') {
+    const gb = keyOn('Gb', 6, mode, tonic);
+    if (gb.name.startsWith(MAJOR_NAME[tonic]!)) return gb;
+  }
+  return keyOn(MAJOR_NAME[parent]!, parent, mode, tonic);
+}
+
+const MODES_IN_ORDER: Mode[] = ['maj', 'min', 'dor', 'mix'];
+
+/** The mode on `tonic` whose scale holds the most of `contour` (MIDI pitches, one a quaver):
+ *  the tonic given, the mode not (the Transcription module's "Auto" mode, 2026-11-28, the
+ *  user). Where two hold as many — a tune that never plays the degree between them, the 6th of
+ *  minor and dorian, the 7th of major and mixolydian — `heard`'s mode when it is one of them
+ *  (the key told from the recording, on the same tonic), else the first of major, minor,
+ *  dorian, mixolydian. */
+export function modeOn(contour: number[], tonic: number, heard?: Mode): Mode {
+  const counts = new Array<number>(12).fill(0);
+  for (const m of contour) counts[((m % 12) + 12) % 12]!++;
+  const fit = (mode: Mode): number => {
+    const key = makeKey(tonic, mode);
+    return LETTERS.reduce((sum, l) => sum + counts[(NATURAL[l]! + key.signature[l]! + 12) % 12]!, 0);
+  };
+  const scores = MODES_IN_ORDER.map(fit);
+  const best = Math.max(...scores);
+  const tied = MODES_IN_ORDER.filter((_, i) => scores[i] === best);
+  return heard && tied.includes(heard) ? heard : tied[0]!;
+}
+
+/** The key of `mode` on `tonic` whose parent major is named `name` (pitch class `parent`). */
+function keyOn(name: string, parent: number, mode: Mode, tonic: number): Key {
   const root = LETTERS.indexOf(name[0]!);
   const signature: Record<string, number> = {};
   const scale = MAJOR.map((step, i) => {
@@ -625,8 +739,19 @@ function abcPitch(letter: string, alt: number, midi: number): string {
 
 /** Lengths one ABC note can show with L:1/8, longest first: a longer or odd one is tied. */
 const LENGTHS = [12, 8, 6, 4, 3, 2, 1];
-/** Quavers beamed together: half a 4/4 bar, a beat of 6/8. */
-const GROUP: Record<Metre, number> = { '4/4': 4, '6/8': 3 };
+/** Where a beam starts in a bar, in quavers: half a 4/4 bar; else each beat — a crotchet of
+ *  2/4 and 3/4, a dotted one of the compound metres, a minim of 2/2, a group of 7/8. */
+function beamStarts(metre: MetreShape): Set<number> {
+  if (metre.beats.length === 4 && metre.beats.every(b => b === 2)) return new Set([0, 4]);
+  return new Set(beatStarts(metre));
+}
+
+/** The Q: line of a quaver rate (quavers a second), in the metre's beat: a dotted crotchet in
+ *  a compound metre, else its lower figure's note. */
+function tempoLine(metre: MetreShape, rate: number): string {
+  if (compound(metre)) return `3/8=${Math.round(rate * 20)}`;
+  return `1/${metre.unit}=${Math.round((rate * 60 * metre.unit) / 8)}`;
+}
 const BARS_PER_LINE = 4;
 /** A silence after a note is written from a dotted crotchet on; shorter, the note is held: the
  *  breath at the end of a phrase (a crotchet, often) is written as the held note players write
@@ -636,6 +761,8 @@ const MIN_REST = 3;
 /** The M:, L:, Q:, K: lines and the body of a transcription in `key` (the caller adds X:
  *  and T:). */
 export function writeAbc(t: Transcription, key: Key): string {
+  const metre = parseMetre(t.metre)!;
+  const beams = beamStarts(metre);
   // notes and rests (pitch null), each from grid position `at`
   const events: { pitch: number | null; at: number; len: number; broken?: '>' | '<' }[] = [];
   for (const n of t.notes) {
@@ -648,7 +775,12 @@ export function writeAbc(t: Transcription, key: Key): string {
   const isBar = (k: number) => t.bars[k] === true;
   let out = '';
   let barsOnLine = 0;
-  let inBar = 0; // quavers since the bar's start (or the first note, in a pickup)
+  // quavers since the bar's start — in a pickup, counted back from the first bar line, so
+  // that its beams fall where the bar's would ("D EFG|" in 6/8, not "DEF G|": the review of
+  // 2026-11-28)
+  const firstBar = t.bars.findIndex(b => b === true);
+  const head = events[0]?.at ?? 0;
+  let inBar = firstBar > head ? (((metre.bar - (firstBar - head)) % metre.bar) + metre.bar) % metre.bar : 0;
   let accidentals = new Map<string, number>();
   let started = false;
   let previous = 0; // the length of the note before, in its bar
@@ -672,7 +804,7 @@ export function writeAbc(t: Transcription, key: Key): string {
       while (room < left && !isBar(at + room)) room++;
       const len = LENGTHS.find(l => l <= room)!;
       // quavers beamed by groups; a crotchet or longer has no beam, set apart
-      if (inBar > 0 && (inBar % GROUP[t.metre] === 0 || len > 1 || previous > 1)) out += ' ';
+      if (inBar > 0 && (beams.has(inBar % metre.bar) || len > 1 || previous > 1)) out += ' ';
       previous = len;
       if (e.pitch === null) out += 'z';
       else {
@@ -694,7 +826,6 @@ export function writeAbc(t: Transcription, key: Key): string {
       if (left > 0 && e.pitch !== null) out += '-';
     }
   }
-  const tempo = t.metre === '6/8' ? `3/8=${Math.round(t.rate * 20)}` : `1/4=${Math.round(t.rate * 30)}`;
-  return [`M:${t.metre}`, 'L:1/8', `Q:${tempo}`, `K:${key.name}`, `${out.trim()}|]`].join('\n');
+  return [`M:${metre.text}`, 'L:1/8', `Q:${tempoLine(metre, t.rate)}`, `K:${key.name}`, `${out.trim()}|]`].join('\n');
 }
 

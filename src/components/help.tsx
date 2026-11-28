@@ -7,7 +7,8 @@ import { CARD_TYPE_TUNE, isTuneset } from '../services/cardTypeService';
 import { cardScoreIndex } from '../services/abcService';
 import { liveScreenActive, importScreenActive } from '../session/ui/sessionModule';
 import { setDetectionOn } from '../session/detections';
-import { EXTENSIONS, type ExtensionId, theSessionOffered, irishTuneInfoOffered, tuneAnalyserOffered, trendingOffered } from '../services/extensions';
+import { EXTENSIONS, type ExtensionId, theSessionOffered, irishTuneInfoOffered, tuneAnalyserOffered, trendingOffered, transcriptionOffered } from '../services/extensions';
+import { setup as transcriptionSetup } from '../transcription/ui/state';
 import { offeredModules } from './pinnedModule';
 import { MusicNoteIcon, CheckIcon, RatingIcon } from './icons';
 import { ratingWord } from './ratingLabel';
@@ -18,7 +19,9 @@ type SectionStyle = 'definition' | 'logic' | 'metrics';
 /** The lines of a section that an extension brings: drawn apart, in a box
  *  named after it, under the section's own lines. */
 type ExtensionLines = { ext: ExtensionId; items: string[] };
-type HelpSection = { heading: string; items: string[]; extension?: ExtensionLines; style?: SectionStyle };
+/** `extension`: one box, or several — the Music extension's and the Irish
+ *  one's under the same section (the guide's "For musicians"). */
+type HelpSection = { heading: string; items: string[]; extension?: ExtensionLines | ExtensionLines[]; style?: SectionStyle };
 
 // ── Extensions ───────────────────────────────────────────────────────────────
 // What an extension offers is only explained while it is offered (2026-10-26):
@@ -32,6 +35,16 @@ function irish(...lines: (string | false)[]): ExtensionLines {
   return { ext: 'irishTrad', items: lines.filter((l): l is string => !!l) };
 }
 
+/** The Music extension's lines (2026-11-28: the Transcription module). */
+function music(...lines: (string | false)[]): ExtensionLines {
+  return { ext: 'music', items: lines.filter((l): l is string => !!l) };
+}
+
+/** A section's boxes, however it gave them. */
+function boxesOf(section: HelpSection): ExtensionLines[] {
+  return section.extension === undefined ? [] : Array.isArray(section.extension) ? section.extension : [section.extension];
+}
+
 /** The import sources the extension offers, in one line: TheSession always
  *  comes with it, irishtune.info only when ticked. */
 function importLine(theSessionOnly: string, withIti: string): string | false {
@@ -40,7 +53,7 @@ function importLine(theSessionOnly: string, withIti: string): string | false {
 
 /** A section the extension emptied of every line has nothing left to say. */
 function nonEmpty(sections: HelpSection[]): HelpSection[] {
-  return sections.filter(s => s.items.length > 0 || (s.extension?.items.length ?? 0) > 0);
+  return sections.filter(s => s.items.length > 0 || boxesOf(s).some(b => b.items.length > 0));
 }
 
 // ── What each screen explains ────────────────────────────────────────────────
@@ -215,6 +228,37 @@ function getInfoContent(ctx: AppContext): { title: string; sections: HelpSection
           { style: 'logic',      heading: t('help.trending.list.heading'),     items: [t('help.trending.list.1'), t('help.trending.list.2')] },
         ],
       };
+
+    // The screen on show, as views/transcriptions.tsx decides it: a
+    // transcription named in the route, else its setup while one is on, else
+    // the list.
+    case 'transcriptions':
+      if (route.id) {
+        return {
+          title: t('help.context.transcriptionPage'),
+          sections: [
+            { style: 'definition', heading: t('help.transcription.score.heading'), items: [t('help.transcription.score.1'), t('help.transcription.score.2'), t('help.transcription.score.4')] },
+            { style: 'logic',      heading: t('help.transcription.menu.heading'),  items: [t('help.transcription.menu.1'), t('help.transcription.menu.2'), t('help.transcription.menu.3')] },
+            { style: 'logic',      heading: t('help.transcription.cards.heading'), items: [t('help.transcription.score.3'), t('help.transcription.cards.2')] },
+          ],
+        };
+      }
+      if (transcriptionSetup.value) {
+        return {
+          title: t('help.context.transcriptionSetup'),
+          sections: [
+            { style: 'logic', heading: t('help.transcription.setup.heading'), items: [t('help.transcription.setup.1'), t('help.transcription.setup.2'), t('help.transcription.setup.3'), t('help.transcription.setup.4')] },
+          ],
+        };
+      }
+      return {
+        title: t('help.context.transcription'),
+        sections: [
+          { style: 'definition', heading: t('help.transcription.what.heading'),  items: [t('help.transcription.what.1'), t('help.transcription.what.2')] },
+          { style: 'logic',      heading: t('help.transcription.start.heading'), items: [t('help.transcription.start.1'), t('help.transcription.start.2'), t('help.transcription.start.3')] },
+          { style: 'logic',      heading: t('help.transcription.list.heading'),  items: [t('help.transcription.list.1'), t('help.transcription.list.2'), t('help.transcription.list.3')] },
+        ],
+      };
   }
 }
 
@@ -231,12 +275,15 @@ function getGuideSteps(): HelpSection[] {
     { heading: t('help.guide.s8.heading'),  items: [t('help.guide.s8.1'), t('help.guide.s8.2'), t('help.guide.s8.3'), t('help.guide.s8.4')] },
     { heading: t('help.guide.s9.heading'),  items: [t('help.guide.s9.1'), t('help.guide.s9.2'), t('help.guide.s9.3'), t('help.guide.s9.4'), t('help.guide.s9.5'), t('help.guide.s9.6')] },
     { heading: t('help.guide.s10.heading'), items: [t('help.guide.s10.1'), t('help.guide.s10.3'), t('help.guide.s10.4'), t('help.guide.s10.extensions')],
-      extension: irish(
-        theSessionOffered() && t('help.guide.s10.theSession'),
-        irishTuneInfoOffered() && t('help.guide.s10.iti'),
-        tuneAnalyserOffered() && t('help.guide.s10.analyser'),
-        trendingOffered() && t('help.guide.s10.trending'),
-      ) },
+      extension: [
+        music(transcriptionOffered() && t('help.guide.s10.transcription')),
+        irish(
+          theSessionOffered() && t('help.guide.s10.theSession'),
+          irishTuneInfoOffered() && t('help.guide.s10.iti'),
+          tuneAnalyserOffered() && t('help.guide.s10.analyser'),
+          trendingOffered() && t('help.guide.s10.trending'),
+        ),
+      ] },
     { heading: t('help.guide.s11.heading'), items: [t('help.guide.s11.1'), t('help.guide.s11.2'), t('help.guide.s11.3')] },
   ];
 }
@@ -357,7 +404,7 @@ function InfoBody({ sections }: { sections: HelpSection[] }) {
                 </li>
               ))}
             </ul>}
-            <ExtensionBox lines={section.extension} bullet={() => <span class="shrink-0 flex items-center mt-0.5 self-start pt-0.5 text-irish"><CheckIcon size={12} /></span>} />
+            {boxesOf(section).map(lines => <ExtensionBox key={lines.ext} lines={lines} bullet={() => <span class="shrink-0 flex items-center mt-0.5 self-start pt-0.5 text-irish"><CheckIcon size={12} /></span>} />)}
           </div>
         );
       })}
@@ -383,7 +430,7 @@ function GuideBody({ steps }: { steps: HelpSection[] }) {
                 </li>
               ))}
             </ul>
-            <ExtensionBox lines={step.extension} bullet={() => <span class="text-dim shrink-0 mt-0.5">·</span>} />
+            {boxesOf(step).map(lines => <ExtensionBox key={lines.ext} lines={lines} bullet={() => <span class="text-dim shrink-0 mt-0.5">·</span>} />)}
           </div>
         );
       })}

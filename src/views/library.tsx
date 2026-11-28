@@ -7,6 +7,7 @@ import { scoreWithAliases, NO_SCORE_MATCH, type AliasMatch } from '../services/n
 import { copyText } from '../services/fileTransfer';
 import { TrashIcon, SortAlphaIcon, ClockIcon, CalendarPlusIcon, StarIcon, CheckIcon, ScatterPlotIcon, GaugeIcon, FlameIcon, StudyIcon, ArrowLeftIcon, ArrowRightIcon, CrossIcon, PlusIcon, MoreHorizontalIcon, UploadIcon, NotesIcon, CopyIcon, ShareIcon, iconElement } from '../components/icons';
 import { CARD_TYPES, cardTypeLabelKey, knownCardType, isTune } from '../services/cardTypeService';
+import { cardTypesOffered } from '../services/extensions';
 import { CARD_SOURCES, cardSource, cardSourceLabel } from '../services/cardSourceService';
 import { buildTunesetCard } from '../services/tunesetCard';
 import { showDeckChoiceModal } from '../components/deckSelector';
@@ -752,7 +753,9 @@ export function LibraryView() {
     // same three fields in, so the bulk menu and a single card teach the same
     // sequence rather than two.
     { label: t('library.batch.importance'), onClick: () => showImportanceModal(selectedArr) },
-    { label: t('library.batch.type'), onClick: () => showCardTypeModal(selectedArr) },
+    // Only with the card types to choose from (the Music extension): "none"
+    // alone is no choice.
+    ...(cardTypesOffered() ? [{ label: t('library.batch.type'), onClick: () => showCardTypeModal(selectedArr) }] : []),
     { label: t('library.batch.addTag'), onClick: () => showAddTagModal(selectedArr) },
     // Nothing to offer when the selection carries no tags at all — the modal
     // would open on an empty list.

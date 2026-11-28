@@ -1,6 +1,6 @@
 import { navigate, getContext } from '../store';
 import { t } from '../services/i18nService';
-import { WaveformIcon, TrendIcon, RecordingPulseDot, PinIcon } from '../components/icons';
+import { WaveformIcon, TrendIcon, TranscribeIcon, RecordingPulseDot, PinIcon } from '../components/icons';
 import { sessionRecordingSignal } from '../session/ui/sessionStore';
 import { offeredModules, pinnedModuleId, togglePin } from '../components/pinnedModule';
 import { showSettingsModal } from '../components/settingsModal';
@@ -109,6 +109,17 @@ export function ModulesView() {
               title={t('trending.moduleTitle')}
               desc={t('trending.moduleDesc')}
               onOpen={() => navigate({ view: 'trending' })}
+            />
+          )}
+
+          {offered.has('transcriptions') && (
+            <ModuleCard
+              first={!offered.has('sessions') && !offered.has('trending')}
+              id="transcriptions"
+              icon={<TranscribeIcon size={20} />}
+              title={t('transcription.moduleTitle')}
+              desc={t('transcription.moduleDesc')}
+              onOpen={() => navigate({ view: 'transcriptions' })}
             />
           )}
 

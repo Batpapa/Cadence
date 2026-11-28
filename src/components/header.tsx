@@ -426,7 +426,7 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
 
   const homeActive    = route.view === 'folder' && route.folderId === null;
   const libActive     = route.view === 'library';
-  const modulesActive = route.view === 'modules' || route.view === 'sessions';
+  const modulesActive = route.view === 'modules' || route.view === 'sessions' || route.view === 'transcriptions';
 
   const search = () => showCommandPalette(() => ctx);
   const help   = () => showHelpModal(ctx);
@@ -714,7 +714,7 @@ export function BottomNav({ ctx }: { ctx: AppContext }) {
   const { route, canGoBack, canGoForward } = ctx;
   const homeActive    = route.view === 'folder' && route.folderId === null;
   const libActive     = route.view === 'library';
-  const modulesActive = route.view === 'modules' || route.view === 'sessions';
+  const modulesActive = route.view === 'modules' || route.view === 'sessions' || route.view === 'transcriptions';
   const pinned        = pinnedModule();
   const labelled      = navLabels(ctx.user);
   const icon          = labelled ? 20 : 24;

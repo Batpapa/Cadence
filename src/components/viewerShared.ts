@@ -27,6 +27,10 @@ export interface ViewerContext {
   hooks: ViewerHooks;
   /** The height a picture, a film or a PDF gets in the dialog. */
   mediaMaxH: string;
+  /** Whether the document's keys (the space bar) are the viewer's right now.
+   *  Absent: always — a dialog's viewer is on top for as long as it is open.
+   *  A score in a page (scoreViewer.ts) gives them up to any dialog over it. */
+  ownsKeys?: () => boolean;
 }
 
 /** What a format hands the dialog around it. Each is optional: the score is
@@ -46,6 +50,11 @@ export interface ViewerHooks {
    *  when it did, `dismiss` running once it is answered (see
    *  ModalOptions.guardDismiss). */
   guardClose?: (dismiss: () => void) => boolean;
+  /** The whole text with the edit not saved folded in, as Save would write
+   *  it; null when there is none. Asks nothing: for a page left by a way no
+   *  question can stop (the header, the drawer, back) — a transcription's,
+   *  which writes it (transcription/ui/screen.tsx, the review of 2026-11-28). */
+  pendingText?: () => string | null;
 }
 
 /** What a save did: written; `refused` — the user backed out of a question
@@ -121,6 +130,10 @@ export interface PreviewModalOpts {
   /** False: no source tabs (Synth, Audio sync, Play-along) over the transport
    *  — the synth alone. A set's score (the user, 2026-11-20). */
   sources?: boolean;
+  /** False: no Play-along tab, the others kept — a transcription's score
+   *  (2026-11-28, the user: of no use there; its recording is its audio
+   *  sync's). */
+  playAlong?: boolean;
   /** Adds a recording to the card the score belongs to: the Play-along's
    *  take, kept (2026-11-01, the user). Absent — a score with no card, a
    *  detection's — the Play-along has no record button. */
@@ -148,6 +161,12 @@ export interface AudioSyncCarry { binding: AudioSyncBinding; forced: boolean }
 export interface AudioSyncBinding {
   /** The recording is only on Drive: the toggle wears the play button's cloud. */
   fromDrive: boolean;
+  /** Followed even when the alignment is judged too poor, each time it is
+   *  turned on — the hidden gesture giving the verdict back. A transcription's
+   *  own recording (2026-11-28, the user): the verdict guards against a WRONG
+   *  score, which a score written from that very recording is not, and a short
+   *  fast take falls under the line all the same (54 % measured). */
+  forcedByDefault?: boolean;
   /** Whether this version — its ABC, as the viewer shows it — can be played
    *  along: the toggle is offered on those only. */
   plays: (version: string) => boolean;

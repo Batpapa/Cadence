@@ -6,7 +6,7 @@ import { FF_PCM_WINDOW } from '../sessionConfig';
 // ── FolkFriend's cleaned energies, the note decoder's extra view ──────────────
 // (2026-11-26) The one place that runs FolkFriend for transcriptor/'s class view
 // (transcriptor/src/folkfriendView.ts: the settings, the folding): the
-// recognition's windows (transcriptorEngine.ts) and the hidden transcription
+// recognition's windows (transcriptorEngine.ts) and the Transcription module
 // (scoreFollowWorker.ts) both hear through it. The module must be initialised
 // (folkfriendInit.ts) before one is made.
 

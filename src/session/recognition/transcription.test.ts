@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import abcjs from 'abcjs';
 import {
-  classNotes, withOctaves, quaverGrid, metreOf, makeKey, keyOfAbc, writeAbc, quaverContour, transcribe,
+  classNotes, withOctaves, quaverGrid, metreOf, makeKey, modeOn, keyOfAbc, writeAbc, quaverContour, transcribe, parseMetre,
   type ClassNote, type Transcription, type GridNote,
 } from './transcription';
 
@@ -207,6 +207,12 @@ describe('keys', () => {
     expect(makeKey(2, 'mix')).toMatchObject({ name: 'Dmix', signature: { F: 1, C: 0 } });
     expect(makeKey(6, 'min').name).toBe('F#min');
     expect(makeKey(10, 'maj')).toMatchObject({ name: 'Bbmaj', flat: true });
+    // six sharps or six flats: the tonic named as its major key is (the circle of fifths)
+    expect(makeKey(3, 'min')).toMatchObject({ name: 'Ebmin', flat: true });
+    expect(makeKey(8, 'dor').name).toBe('Abdor');
+    expect(makeKey(1, 'mix').name).toBe('Dbmix');
+    expect(makeKey(6, 'maj').name).toBe('F#maj');
+    expect(makeKey(1, 'min').name).toBe('C#min');
   });
 
   it('reads FolkFriend\'s key line', () => {
@@ -219,7 +225,7 @@ describe('keys', () => {
 describe('writeAbc', () => {
   /** Notes one after the other from grid position `from`, bars every `bar` quavers from
    *  `first`. */
-  function tune(notes: [number, number][], bar: number, first = 0, from = 0, metre: '4/4' | '6/8' = '4/4'): Transcription {
+  function tune(notes: [number, number][], bar: number, first = 0, from = 0, metre = '4/4'): Transcription {
     let at = from;
     const gridNotes: GridNote[] = notes.map(([pitch, quavers]) => { const n = { pitch, at, quavers, sounds: quavers }; at += quavers; return n; });
     const bars = Array.from({ length: at + 1 }, (_, k) => k >= first && (k - first) % bar === 0);
@@ -254,6 +260,24 @@ describe('writeAbc', () => {
     expect(abc).toContain('M:6/8');
     expect(abc).toContain('Q:3/8=140');
     expect(abc.split('\n').pop()).toBe('D| G3 B3| d6|]');
+  });
+
+  it('beams a pickup as the bar it leads into would be (the review of 2026-11-28)', () => {
+    // four quavers before a 6/8 bar: the first ends the previous beat, the three others a beat
+    const jig = tune([[62, 1], [64, 1], [66, 1], [67, 1], [69, 6]], 6, 4, 0, '6/8');
+    expect(writeAbc(jig, makeKey(7, 'maj')).split('\n').pop()).toBe('D EFG| A6|]');
+    // five before a 4/4 bar
+    const reel = tune([[62, 1], [64, 1], [66, 1], [67, 1], [69, 1], [71, 8]], 8, 5, 0);
+    expect(writeAbc(reel, makeKey(2, 'maj')).split('\n').pop()).toBe('D EFGA| B8|]');
+  });
+
+  it('writes any metre: its M:, its Q: in its beat, its beams by its beats', () => {
+    const seven = tune([[62, 1], [64, 1], [66, 1], [67, 1], [69, 1], [71, 1], [73, 1]], 7, 0, 0, '7/8');
+    expect(writeAbc(seven, makeKey(2, 'maj')).split('\n')).toEqual(['M:7/8', 'L:1/8', 'Q:1/8=420', 'K:Dmaj', 'DE FG ABc|]']);
+    const slipThree = tune([[62, 1], [64, 1], [66, 1]], 3, 0, 0, '3/8');
+    expect(writeAbc(slipThree, makeKey(2, 'maj'))).toContain('Q:3/8=140');
+    const cut = tune([[62, 1], [64, 1], [66, 1], [67, 1], [69, 1], [71, 1], [73, 1], [74, 1]], 8, 0, 0, 'C|');
+    expect(writeAbc(cut, makeKey(2, 'maj')).split('\n')).toEqual(['M:C|', 'L:1/8', 'Q:1/2=105', 'K:Dmaj', 'DEFG ABcd|]']);
   });
 
   it('writes broken pairs, played dotted', () => {
@@ -299,5 +323,32 @@ describe('writeAbc', () => {
     expect(abc.split('\n').length).toBeGreaterThan(5);
     expect(played(abc)).toEqual(notes);
     expect(quaverContour(t).length).toBe(notes.reduce((s, n) => s + n[1], 0));
+  });
+});
+
+describe('parseMetre: any metre as M: writes it', () => {
+  it('reads beats in quavers, the compound ones in threes', () => {
+    expect(parseMetre('4/4')).toMatchObject({ bar: 8, beats: [2, 2, 2, 2], unit: 4 });
+    expect(parseMetre('C')).toMatchObject({ text: 'C', bar: 8, beats: [2, 2, 2, 2] });
+    expect(parseMetre('C|')).toMatchObject({ text: 'C|', bar: 8, beats: [4, 4], unit: 2 });
+    expect(parseMetre('3/2')).toMatchObject({ bar: 12, beats: [4, 4, 4] });
+    expect(parseMetre('12/8')).toMatchObject({ bar: 12, beats: [3, 3, 3, 3] });
+    expect(parseMetre('5/8')).toMatchObject({ bar: 5, beats: [2, 3] });
+    expect(parseMetre('7/8')).toMatchObject({ bar: 7, beats: [2, 2, 3] });
+    expect(parseMetre(' 3+2+2/8 ')).toMatchObject({ text: '3+2+2/8', bar: 7, beats: [3, 2, 2] });
+  });
+  it('refuses what the quaver grid cannot hold', () => {
+    for (const m of ['', 'abc', '4/3', '7/16', '1/8', '17/4', '0/4', '4/']) expect(parseMetre(m)).toBeNull();
+  });
+});
+
+describe('modeOn: the mode of a tonic given, from the notes', () => {
+  it('takes the scale that holds them, the heard mode breaking a tie', () => {
+    const dMajor = [62, 64, 66, 67, 69, 71, 73, 74];
+    expect(modeOn(dMajor, 2)).toBe('maj');
+    expect(modeOn([62, 64, 65, 67, 69, 71, 72], 2)).toBe('dor');
+    // no 7th: major and mixolydian hold as many — the heard one, else major
+    expect(modeOn([62, 64, 66, 67, 69, 71], 2)).toBe('maj');
+    expect(modeOn([62, 64, 66, 67, 69, 71], 2, 'mix')).toBe('mix');
   });
 });

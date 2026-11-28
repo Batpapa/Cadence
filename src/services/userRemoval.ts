@@ -2,6 +2,7 @@ import { forgetUserKeys } from '../userLocalKeys';
 import { clearSnapshotsForUser } from './snapshotService';
 import { deleteLocalSessionData } from '../session/db';
 import { deleteLocalAttachmentData } from './attachmentDb';
+import { deleteLocalTranscriptionData } from '../transcription/audioDb';
 import { deleteUser, removeUserFromOrder, getLastUserId, clearLastUserId } from '../db';
 
 /** Removes the whole local copy of a user from this device: every key of
@@ -27,6 +28,7 @@ export async function removeUserData(userId: string): Promise<void> {
   await clearSnapshotsForUser(userId);
   await deleteLocalSessionData(userId);
   await deleteLocalAttachmentData(userId);
+  await deleteLocalTranscriptionData(userId);
   removeUserFromOrder(userId);
   await deleteUser(userId);
   if (getLastUserId() === userId) clearLastUserId();

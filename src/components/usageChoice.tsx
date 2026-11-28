@@ -130,7 +130,7 @@ export function showUsageChoiceModal(ctx: AppContext, onDone: () => void): void 
     cleanup();
     if (irishTrad || samples) {
       void ctx.mutate(s => {
-        if (irishTrad) updateUser(s, { extensions: { ...s.extensions, irishTrad: true } });
+        if (irishTrad) updateUser(s, { extensions: { ...s.extensions, music: true, irishTrad: true } });
         samples?.(s);
       });
     }

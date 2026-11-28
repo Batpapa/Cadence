@@ -1,13 +1,14 @@
 import { signal, computed, type Signal } from '@preact/signals';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { render, Fragment } from 'preact';
-import type { ComponentChildren } from 'preact';
+import type { ComponentChildren, JSX } from 'preact';
 import type { AppContext, IncipitDisplay } from '../types';
 import { generateId } from '../utils';
 import { emptyState } from '../services/migration';
 import { ownFormatAccept } from '../services/device';
 import { deleteLocalSessionData, localSessionAudioStats, freeableSessionAudio, freeSyncedSessionAudio } from '../session/db';
 import { deleteLocalAttachmentData, localAttachmentBytes } from '../services/attachmentDb';
+import { deleteLocalTranscriptionData } from '../transcription/audioDb';
 import { TrashIcon, ResetIcon, HelpIcon, ExpandIcon, CollapseIcon, CrossIcon, PlusIcon, MinusIcon, UploadIcon, ImportTrayIcon, studyIconSvg } from './icons';
 import { IconButton, Switch } from './ui';
 import { initialsOf } from './initials';
@@ -37,7 +38,7 @@ import { clearLastUserId } from '../db';
 import { removeUserData } from '../services/userRemoval';
 import { defaultTuneRepeat, MAX_REPEAT, addTunesetAbcOnConvert } from '../services/abcService';
 import { setsMatchTuneTags } from '../services/cardRefService';
-import { EXTENSIONS, extensionEnabled, extensionOption } from '../services/extensions';
+import { EXTENSIONS, extensionEnabled, extensionOption, extensionSwitch, type Extension } from '../services/extensions';
 import { refreshStorageEstimate, storageUsage } from '../services/storageService';
 import { formatBytes } from '../utils';
 import { registerOverlay } from './overlayStack';
@@ -599,6 +600,9 @@ async function runReset(): Promise<void> {
   // deliberately left alone: neither this nor removing a user has ever deleted
   // a companion file (verified 2026-09-23), and attachments follow that rule.
   await deleteLocalAttachmentData(userId);
+  // And the recordings transcribed (transcription/audioDb.ts), for the same
+  // reason as the analyser's.
+  await deleteLocalTranscriptionData(userId);
   ctx.navigate({ view: 'folder', folderId: null });
 }
 
@@ -1388,42 +1392,50 @@ function dateFormatLabel(f: DateFormat): string {
 
 function ExtensionsSection({ ctx }: { ctx: AppContext }) {
   const user = appState.value;
+  // An extension, its options, then the extensions that are part of it, in
+  // its frame (2026-11-28: Irish traditional music under Music). A child's
+  // own switch is shown as it is, greyed and locked while its parent is off.
+  const block = (ext: Extension): JSX.Element => {
+    const on = extensionEnabled(ext.id, user);
+    const parentOn = !ext.parent || extensionEnabled(ext.parent, user);
+    const children = EXTENSIONS.filter(e => e.parent === ext.id);
+    return (
+      // Framed in the extension's own green, as its lines are in the help.
+      <div key={ext.id} class={`rounded-lg border bg-bg px-3.5 py-3 transition-opacity ${ext.id === 'irishTrad' ? 'border-irish/50' : 'border-border'} ${parentOn ? '' : 'opacity-40'}`}>
+        <div class="flex items-center justify-between gap-4">
+          <span class="text-sm font-medium text-primary">{t(ext.labelKey)}</span>
+          <Switch
+            checked={extensionSwitch(ext.id, user)}
+            disabled={!parentOn}
+            onChange={(v) => void ctx.mutate(s => updateUser(s, { extensions: { ...s.extensions, [ext.id]: v } }))}
+          />
+        </div>
+        <p class="text-xs text-muted leading-relaxed mt-1.5">{t(ext.descKey)}</p>
+        <div class={`mt-2.5 pt-1 border-t border-border transition-opacity ${on || !parentOn ? '' : 'opacity-40'}`}>
+          {ext.options.map(opt => (
+            <div key={opt.id} class="flex items-center justify-between gap-4 py-1.5 pl-2">
+              <span class="text-sm text-primary">
+                {t(opt.labelKey)}
+                {opt.forced && <span class="text-xs text-dim"> · {t('settings.extensions.always')}</span>}
+              </span>
+              <Switch
+                checked={on && extensionOption(ext.id, opt.id, user)}
+                disabled={!on || opt.forced}
+                onChange={(v) => void ctx.mutate(s => updateUser(s, {
+                  extensionOptions: { ...s.extensionOptions, [ext.id]: { ...s.extensionOptions?.[ext.id], [opt.id]: v } },
+                }))}
+              />
+            </div>
+          ))}
+        </div>
+        {children.length > 0 && <div class={`mt-2.5 space-y-2.5 transition-opacity ${on ? '' : 'opacity-60'}`}>{children.map(block)}</div>}
+      </div>
+    );
+  };
   return (
     <>
       <p class="text-xs text-muted leading-relaxed pb-2">{t('settings.extensions.intro')}</p>
-      {EXTENSIONS.map(ext => {
-        const on = extensionEnabled(ext.id, user);
-        return (
-          // Framed in the extension's own green, as its lines are in the help.
-          <div key={ext.id} class={`rounded-lg border bg-bg px-3.5 py-3 ${ext.id === 'irishTrad' ? 'border-irish/50' : 'border-border'}`}>
-            <div class="flex items-center justify-between gap-4">
-              <span class="text-sm font-medium text-primary">{t(ext.labelKey)}</span>
-              <Switch
-                checked={on}
-                onChange={(v) => void ctx.mutate(s => updateUser(s, { extensions: { ...s.extensions, [ext.id]: v } }))}
-              />
-            </div>
-            <p class="text-xs text-muted leading-relaxed mt-1.5">{t(ext.descKey)}</p>
-            <div class={`mt-2.5 pt-1 border-t border-border transition-opacity ${on ? '' : 'opacity-40'}`}>
-              {ext.options.map(opt => (
-                <div key={opt.id} class="flex items-center justify-between gap-4 py-1.5 pl-2">
-                  <span class="text-sm text-primary">
-                    {t(opt.labelKey)}
-                    {opt.forced && <span class="text-xs text-dim"> · {t('settings.extensions.always')}</span>}
-                  </span>
-                  <Switch
-                    checked={on && extensionOption(ext.id, opt.id, user)}
-                    disabled={!on || opt.forced}
-                    onChange={(v) => void ctx.mutate(s => updateUser(s, {
-                      extensionOptions: { ...s.extensionOptions, [ext.id]: { ...s.extensionOptions?.[ext.id], [opt.id]: v } },
-                    }))}
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      })}
+      {EXTENSIONS.filter(e => !e.parent).map(block)}
     </>
   );
 }

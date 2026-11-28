@@ -2,9 +2,9 @@ import { describe, expect, it, beforeAll } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import init from '../../../vendor/folkfriend/folkfriend.js';
-import { transcribeAudio } from './transcribeAudio';
+import { transcribeAudio, type TranscribeSettings } from './transcribeAudio';
 
-// The hidden transcription end to end, in Node, on scenes whose truth is known: tunes written
+// The transcription end to end, in Node, on scenes whose truth is known: tunes written
 // here in a little ABC (explicit accidentals, no key signature), played by harmonic tones whose
 // accents follow the metre (players lean on the bar's first note, then on its beats) over a
 // little noise, a few times over as a tune is. Each test is one of the testers' remarks
@@ -124,8 +124,51 @@ describe('transcribeAudio: borrowed notes', () => {
   }, T);
 });
 
+describe('transcribeAudio: what the user said of the recording (the Transcription module)', () => {
+  const given = (name: keyof typeof scenes, settings: TranscribeSettings) => transcribeAudio(play(scenes[name].abc, scenes[name]), RATE, () => {}, settings);
+  const barLengths = (abc: string | null) => body(abc).split('|').slice(1, -2).map(bar => bar.trim()).filter(Boolean);
+
+  it('a polka said to be in 2/4: written in 2/4, its bars of two crotchets', () => {
+    const abc = given('polka', { metre: '2/4' });
+    expect(header(abc, 'M')).toBe('2/4');
+    expect(header(abc, 'Q')).toMatch(/^1\/4=/);
+    expect(barLengths(abc).length).toBeGreaterThan(20);
+  }, T);
+
+  it('a waltz said to be in 3/4: written in 3/4', () => {
+    const abc = given('waltz', { metre: '3/4' });
+    expect(header(abc, 'M')).toBe('3/4');
+    expect(body(abc)).toMatch(/A6|D6|C6/);
+  }, T);
+
+  it('a key given: written in it, its accidentals by its degrees', () => {
+    const abc = given('reel', { key: { tonic: 2, mode: 'mix' } });
+    expect(header(abc, 'K')).toBe('Dmix');
+    expect(body(abc)).toContain('^c');
+  }, T);
+
+  it('any metre M: writes (2026-11-28): a tune in five said to be in 5/4, one in 7/8', () => {
+    const five = given('fiveTime', { metre: '5/4' });
+    expect(header(five, 'M')).toBe('5/4');
+    expect(header(five, 'Q')).toMatch(/^1\/4=/);
+    const seven = given('polka', { metre: '2+2+3/8' });
+    expect(header(seven, 'M')).toBe('2+2+3/8');
+    expect(header(seven, 'Q')).toMatch(/^1\/8=/);
+    // what cannot be laid out is as nothing said: told from the recording
+    expect(header(given('reel', { metre: '7/16' }), 'M')).toMatch(/^(4\/4|6\/8)$/);
+  }, T);
+
+  it('a tonic given, its mode not (2026-11-28): the mode whose scale holds the notes', () => {
+    expect(header(given('reel', { key: { tonic: 2 } }), 'K')).toBe('Dmaj');
+    expect(header(given('dorianWithLeadingTone', { key: { tonic: 2 } }), 'K')).toBe('Ddor');
+    // on another tonic than the one heard, the notes alone decide: E with D major's notes
+    expect(header(given('reel', { key: { tonic: 4 } }), 'K')).toBe('Edor');
+  }, T);
+});
+
 describe('transcribeAudio: what it cannot do yet', () => {
-  // the metre is binary (4/4) or ternary (6/8), nothing else (transcription.ts, Metre)
+  // told from the recording, the metre is binary (4/4) or ternary (6/8), nothing else: the
+  // others are the user's to give (transcription.ts, Metre)
   it.fails('a polka in 2/4 (Bédou, 25-11)', () => {
     expect(header(transcribed('polka'), 'M')).toBe('2/4');
   }, T);

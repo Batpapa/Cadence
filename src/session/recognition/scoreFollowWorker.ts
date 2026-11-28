@@ -6,7 +6,7 @@ import { getSettingContour } from './indexStore';
 import { FF_PCM_WINDOW } from '../sessionConfig';
 import { Novelty } from '../liveTempo';
 import { resample, RATE } from '../../../transcriptor/src/decoder.ts';
-import { transcribeAudio } from './transcribeAudio';
+import { transcribeAudio, type TranscribeSettings } from './transcribeAudio';
 import { initTranscriptor } from './transcriptorInit';
 
 // ── Score following worker ───────────────────────────────────────────────────
@@ -64,8 +64,9 @@ export type ScoreFollowRequest =
    *  curve worked out when asked (2026-11-01): the novelty is never saved.
    *  Sent as it is worked out, so the curve grows (2026-11-02, the user). */
   | { type: 'tempo'; audio: Blob; from: number; to: number }
-  /** The whole recording written out as ABC (transcribeRecording.tsx). */
-  | { type: 'transcribe'; audio: Blob };
+  /** [from, to) of the recording written out as ABC — the whole of it when
+   *  absent — with what the user said of it (the Transcription module). */
+  | { type: 'transcribe'; audio: Blob; from?: number; to?: number; settings?: TranscribeSettings };
 export type ScoreFollowResponse =
   | { type: 'progress'; stage: FollowStage; ratio: number }
   /** The stretch, mono, at its own rate — sent before the alignment is done.
@@ -81,8 +82,6 @@ export type ScoreFollowResponse =
   | { type: 'tempo-done' }
   /** The transcription: its M:, L:, Q:, K: lines and the tune (transcription.ts). */
   | { type: 'transcribed'; abc: string }
-  /** Longer than a transcription is followed whole (LONG_S). */
-  | { type: 'too-long'; seconds: number; max: number }
   | { type: 'failed'; reason: FollowFailure }
   | { type: 'error'; message: string };
 
@@ -345,15 +344,17 @@ function locate(features: Float32Array, fps: number, score: number[], onRatio: (
   return { from: Math.max(0, start - ZONE_MARGIN_S), to: end + ZONE_MARGIN_S };
 }
 
-// ── A recording written out (2026-11-23, the user: a hidden gesture) ─────────
-// The whole recording at once (LONG_S at most): transcribeAudio.ts, where each step
-// is and what measured it.
+// ── A recording written out (2026-11-23; the Transcription module, 2026-11-27) ──
+// The passage at once: transcribeAudio.ts, where each step is and what measured it. No
+// longest passage (2026-11-27, the user: "people do what they want"): it is decoded whole, so
+// an hour of it is gigabytes on the way, and a phone may well run out — the worker then dies,
+// and the caller reads that as a failure; nothing was written anywhere yet.
 
 /** The ABC of `pcm` at `rate`, or null when no tune was heard. */
-async function writeOut(pcm: Float32Array, rate: number, onRatio: (r: number) => void): Promise<string | null> {
+async function writeOut(pcm: Float32Array, rate: number, onRatio: (r: number) => void, settings?: TranscribeSettings): Promise<string | null> {
   await engine(); // the module's init
   await initTranscriptor(); // the notes' analysis in WebAssembly (else in TypeScript)
-  return transcribeAudio(pcm, rate, onRatio);
+  return transcribeAudio(pcm, rate, onRatio, settings);
 }
 
 /** At most this often — a message per frame would cost more than the work. */
@@ -428,15 +429,15 @@ ctx.onmessage = (e) => {
       if (msg.type === 'transcribe') {
         const duration = await durationOf(msg.audio);
         if (duration === null) { ctx.postMessage({ type: 'failed', reason: 'no_audio' }); return; }
-        // Followed whole afterwards: a longer one would be searched for the
-        // tune (locate), which a score of the whole recording is not.
-        if (duration > LONG_S) { ctx.postMessage({ type: 'too-long', seconds: duration, max: LONG_S }); return; }
+        const from = Math.max(0, Math.min(msg.from ?? 0, duration));
+        const to = Math.max(from, Math.min(msg.to ?? duration, duration));
+        if (to - from <= 0) { ctx.postMessage({ type: 'failed', reason: 'no_audio' }); return; }
         progress('decode', 0);
-        const d = await decodeSpan(msg.audio, 0, duration, r => progress('decode', r));
+        const d = await decodeSpan(msg.audio, from, to, r => progress('decode', r));
         if (!d) { ctx.postMessage({ type: 'failed', reason: 'no_audio' }); return; }
         progress('listen', 0);
         // at the rate the transcription was measured at (transcriptor/src/decoder.ts's RATE)
-        const abc = await writeOut(resample(d.pcm, d.rate, RATE), RATE, r => progress('listen', r));
+        const abc = await writeOut(resample(d.pcm, d.rate, RATE), RATE, r => progress('listen', r), msg.settings);
         if (!abc) { ctx.postMessage({ type: 'failed', reason: 'no_contour' }); return; }
         ctx.postMessage({ type: 'transcribed', abc });
         return;

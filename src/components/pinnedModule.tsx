@@ -1,8 +1,8 @@
 import { signal } from '@preact/signals';
 import type { JSX } from 'preact';
 import type { Route } from '../types';
-import { WaveformIcon, TrendIcon } from './icons';
-import { tuneAnalyserOffered, trendingOffered } from '../services/extensions';
+import { WaveformIcon, TrendIcon, TranscribeIcon } from './icons';
+import { tuneAnalyserOffered, trendingOffered, transcriptionOffered } from '../services/extensions';
 
 // ── Pinning a module to the navigation ───────────────────────────────────────
 // Answers a field request (2026-09-09) that asked for something else: "the
@@ -44,6 +44,7 @@ export interface PinnableModule {
 export const PINNABLE_MODULES: PinnableModule[] = [
   { id: 'sessions', labelKey: 'sessions.moduleTitle', shortLabelKey: 'bottomNav.sessions', route: { view: 'sessions' }, Icon: WaveformIcon, offered: () => tuneAnalyserOffered() },
   { id: 'trending', labelKey: 'trending.moduleTitle', shortLabelKey: 'bottomNav.trending', route: { view: 'trending' }, Icon: TrendIcon, offered: () => trendingOffered() },
+  { id: 'transcriptions', labelKey: 'transcription.moduleTitle', shortLabelKey: 'bottomNav.transcription', route: { view: 'transcriptions' }, Icon: TranscribeIcon, offered: () => transcriptionOffered() },
 ];
 
 /** The modules the open user is offered: each is an option of an extension

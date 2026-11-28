@@ -49,7 +49,20 @@ export function emptyTree(): SessionTree {
  *  normal state for anyone who has never made a folder). Returns a detached
  *  copy — mutating it changes nothing; `editSessionTree` is how it is written. */
 export function sessionTreeOf(user: AppState): SessionTree {
-  const mod = analyserModuleOf(user);
+  return treeOfFields(analyserModuleOf(user));
+}
+
+/** Where a module keeps its tree: the three fields, absent until a first
+ *  folder — the analyser's (model.ts), the Transcription module's
+ *  (transcription/model.ts, 2026-11-28), named alike. */
+export interface TreeFields {
+  folders?: Record<string, SessionFolder>;
+  rootFolderIds?: string[];
+  rootSessionIds?: string[];
+}
+
+/** The tree of a module's fields, detached (see sessionTreeOf). */
+export function treeOfFields(mod: TreeFields | undefined): SessionTree {
   return {
     folders: Object.fromEntries(Object.entries(mod?.folders ?? {}).map(([id, f]) => [id, {
       id: f.id,
@@ -71,20 +84,23 @@ export function sessionTreeOf(user: AppState): SessionTree {
 export function editSessionTree(user: AppState, fn: (tree: SessionTree) => void): void {
   const tree = sessionTreeOf(user);
   fn(tree);
+  editAnalyserModule(user, mod => writeTreeFields(mod, tree));
+}
+
+/** `tree` written into a module's fields — none at all for an empty one. */
+export function writeTreeFields(mod: TreeFields, tree: SessionTree): void {
   const empty = Object.keys(tree.folders).length === 0
     && tree.rootFolderIds.length === 0
     && tree.rootSessionIds.length === 0;
-  editAnalyserModule(user, mod => {
-    if (empty) {
-      delete mod.folders;
-      delete mod.rootFolderIds;
-      delete mod.rootSessionIds;
-    } else {
-      mod.folders = tree.folders;
-      mod.rootFolderIds = tree.rootFolderIds;
-      mod.rootSessionIds = tree.rootSessionIds;
-    }
-  });
+  if (empty) {
+    delete mod.folders;
+    delete mod.rootFolderIds;
+    delete mod.rootSessionIds;
+  } else {
+    mod.folders = tree.folders;
+    mod.rootFolderIds = tree.rootFolderIds;
+    mod.rootSessionIds = tree.rootSessionIds;
+  }
 }
 
 // ── Reading the tree ─────────────────────────────────────────────────────────

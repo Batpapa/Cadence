@@ -47,7 +47,13 @@ import type { ScoreFace } from '../../types';
 /** What is followed: the passage a detection heard the tune in, in session
  *  time; or a recording the tune is anywhere in. */
 export type FollowTarget =
-  | { kind: 'passage'; start: number; end: number }
+  /** `home`: the bounds taken off (the player's cross) come back to the
+   *  passage, not to the whole stretch decoded round it — a transcription's
+   *  range, its bounds by default (2026-11-28, the user). `loose`: the passage
+   *  holds more than the tune — a transcription's range, chosen round it,
+   *  silence and all — so the alignment covers the score's own length, not
+   *  the passage's (coverOf). */
+  | { kind: 'passage'; start: number; end: number; home?: boolean; loose?: boolean }
   | { kind: 'recording' };
 
 type Phase =
@@ -109,8 +115,11 @@ const USABLE_COVER = 0.5;
 
 /** The share the alignment covers of what it must (USABLE_COVER). */
 function coverOf(f: SessionFollow, target: FollowTarget): number {
-  const span = target.kind === 'passage' ? target.end - target.start
-    : Math.min(f.seconds, (f.quavers * 30) / f.bpm);
+  // A transcription's range (`loose`): one pass of its score at the tempo
+  // found, as a card's recording — measured 2026-11-28 on a take of 5.6 s, the
+  // tune in its last 2.1: aligned right, and refused at 37 % of the range.
+  const span = target.kind === 'passage' && !target.loose ? target.end - target.start
+    : Math.min(target.kind === 'passage' ? target.end - target.start : f.seconds, (f.quavers * 30) / f.bpm);
   return span > 0 ? (f.end - f.times[0]!) / span : 1;
 }
 
@@ -250,6 +259,7 @@ function ScoreFollowView({ target, version, edited, getAudio, face, onState, for
       return { ...(await engine.loadSamples([s.pcm], s.rate, WAVE_BARS)), origin: s.from };
     },
     autoplay: true,
+    ...(target.kind === 'passage' && target.home ? { home: firstRegion() } : {}),
   }), []);
 
   // The score's text, the samples, then the alignment — again for each

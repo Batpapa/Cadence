@@ -7,7 +7,8 @@ import { attachmentFor } from '../services/attachmentStore';
 import { capturing } from '../services/audioSession';
 import { fmtTime } from '../services/audioPresets';
 import { audioExtension } from '../services/zip';
-import { MicSource } from '../session/audio/sources';
+import { createLiveSource, type LiveSourceKind, type LiveStreamSource } from '../session/audio/sources';
+import { NoCapturedAudioError, DisplayCaptureUnsupportedError } from '../session/audio/capture';
 import { WakeLockManager } from '../services/wakeLock';
 import { pickRecorderMime } from '../session/audio/recorder';
 import { MemoryRecorder } from '../thesessionEmbed/memoryRecorder';
@@ -35,8 +36,10 @@ import { t } from '../services/i18nService';
 type Phase = 'idle' | 'opening' | 'recording' | 'stopping' | 'stopped';
 
 /** One take at a time, and the microphone held only while it records: the
- *  phone's mic indicator goes off at Stop, not at the dialog's closing. */
-class Take {
+ *  phone's mic indicator goes off at Stop, not at the dialog's closing.
+ *  `kind`: the microphone, or the sound the device plays (the analyser's two
+ *  live sources) — the Transcription module records from either (2026-11-27). */
+export class Take {
   readonly phase = signal<Phase>('idle');
   readonly error = signal<string | null>(null);
   /** The file's extension: the format the recorder will ask for, then the
@@ -44,22 +47,25 @@ class Take {
   readonly extension = signal(extensionOf(pickRecorderMime()));
   /** What the chrono shows once stopped. */
   durationMs = 0;
-  private source: MicSource | null = null;
+  private source: LiveStreamSource | null = null;
   private recorder: MemoryRecorder | null = null;
   private readonly wake = new WakeLockManager();
   private startedAt = 0;
   private file: Blob | null = null;
   private stopping: Promise<void> | null = null;
 
-  /** From the tap: MicSource.open() must be reached before anything is
-   *  awaited, or the iPhone's session will not allow recording. */
+  constructor(private readonly kind: LiveSourceKind = 'mic') {}
+
+  /** From the tap: the source's open() must be reached before anything is
+   *  awaited, or the iPhone's session will not allow recording (and the
+   *  browser's share picker, for the device's sound, needs the tap). */
   start(): void {
     this.release();
     this.error.value = null;
     // The Play-along's rule: a live recording holding the microphone is not
     // taken from under it.
     if (capturing()) { this.error.value = t('fileViewer.record.error.busy'); return; }
-    const source = new MicSource();
+    const source = createLiveSource(this.kind);
     this.source = source;
     this.phase.value = 'opening';
     source.open().then(() => {
@@ -78,6 +84,16 @@ class Take {
       this.source = null;
       source.stop();
       const name = err instanceof Error ? err.name : '';
+      this.phase.value = 'idle';
+      // The device's sound, as the analyser's live screen answers it
+      // (sessionModule.ts startLiveSession): the share picker dismissed is a
+      // decision, said nothing of.
+      if (this.kind === 'device') {
+        if (name === 'NotAllowedError' || name === 'AbortError' || name === 'NotFoundError') return;
+        if (err instanceof NoCapturedAudioError) { this.error.value = t('sessions.source.device.noAudio'); return; }
+        if (err instanceof DisplayCaptureUnsupportedError) { this.error.value = t('sessions.source.device.unsupported'); return; }
+        if (name === 'SystemAudioUnsupportedError') { this.error.value = t('sessions.source.device.unsupportedApp'); return; }
+      }
       // Safari says SecurityError where the others say NotAllowedError.
       this.error.value = name === 'NotAllowedError' || name === 'SecurityError'
         ? t('fileViewer.record.error.denied')

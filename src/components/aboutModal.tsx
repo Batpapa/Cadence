@@ -7,7 +7,6 @@ import { ShareAppBody } from './shareAppModal';
 import { APP_BUILD, commitUrl } from '../services/updateService';
 import { isNative } from '../native/platform';
 import { devMode, toggleDevMode } from '../services/devMode';
-import { pickFiles } from '../services/filePicker';
 
 // ── "About Cadence" ──────────────────────────────────────────────────────────
 // Behind the logo, since the header redesign of 2026-10-23. It merges two
@@ -78,36 +77,14 @@ const DEV_TAPS = 7;
 /** Longer than this between two taps and the count starts again. */
 const DEV_TAP_GAP_MS = 1000;
 
-/** Taps in a row on the logo that pick a recording to transcribe. */
-const TRANSCRIBE_TAPS = 5;
-
-/** The hidden transcription (2026-11-23, the user: for two testers, not in
- *  the developer mode): five taps on the logo pick a recording, written out
- *  as ABC and followed (session/ui/transcribeRecording.tsx, loaded then).
- *  The picker opens on the fifth tap itself: it needs the gesture. */
-function useTranscribeTaps(): () => void {
-  const taps = useRef({ n: 0, at: 0 });
-  return () => {
-    const now = performance.now();
-    taps.current.n = now - taps.current.at < DEV_TAP_GAP_MS ? taps.current.n + 1 : 1;
-    taps.current.at = now;
-    if (taps.current.n < TRANSCRIBE_TAPS) return;
-    taps.current.n = 0;
-    void pickFiles({ id: 'transcription', startIn: 'music' }).then(([file]) => {
-      if (file) void import('../session/ui/transcribeRecording').then(m => m.transcribeRecording(file));
-    });
-  };
-}
-
 function AboutBody() {
   const brand = useBrandColor();
-  const onLogoTap = useTranscribeTaps();
   return (
     <div class="space-y-5">
       <div class="flex items-center gap-3">
         {/* The logo in its own colour on a neutral tile: the accent purple
             is the interface's (UI charter, 2026-11-11). */}
-        <span class="w-11 h-11 rounded-lg bg-surface flex items-center justify-center shrink-0 select-none" style={{ color: brand }} onClick={onLogoTap}>
+        <span class="w-11 h-11 rounded-lg bg-surface flex items-center justify-center shrink-0 select-none" style={{ color: brand }}>
           <CadenceLogo size={32} />
         </span>
         <div class="min-w-0 space-y-0.5">

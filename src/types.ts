@@ -434,12 +434,17 @@ export interface User {
   schemaVersion?: number;
 }
 
-/** One flag per extension. Absent = ON: every user made before extensions
- *  existed (2026-10-26) had all of it, and keeps it. A brand-new user is
- *  written with an explicit `false` instead (main.ts's blankUser). */
+/** One flag per extension. What its absence means is the extension's own
+ *  (services/extensions.ts, `absentOn`, read there only). A brand-new user is
+ *  written with an explicit `false` for each (main.ts's blankUser). */
 export interface UserExtensions {
-  /** Irish traditional music: TheSession and irishtune.info as card sources,
-   *  the tune analyser and Trending modules. */
+  /** Music (2026-11-28): the tune and set card types, the Transcription
+   *  module — and the Irish extension under it. Absent = what the Irish one's
+   *  own flag says: whoever has that one has music. */
+  music?: boolean;
+  /** Irish traditional music, under Music: TheSession and irishtune.info as
+   *  card sources, the tune analyser and Trending modules. Absent = ON: every
+   *  user made before extensions existed (2026-10-26) had all of it. */
   irishTrad?: boolean;
 }
 
@@ -552,7 +557,12 @@ export type Route =
   // Deliberately excludes the deck-picker target — that stays session-only, never persisted.
   // `deflate` absent means ON — see DEFLATE_BY_DEFAULT. A refusal is therefore
   // written as an explicit `false`, never as an omission.
-  | { view: 'trending'; from?: string; to?: string; gainMode?: TrendingGainMode; minTunebooks?: number; deflate?: boolean };
+  | { view: 'trending'; from?: string; to?: string; gainMode?: TrendingGainMode; minTunebooks?: number; deflate?: boolean }
+  // The Transcription module (2026-11-27): its list (searched as the
+  // analyser's is, the search in the route), or one transcription. A
+  // transcription being set up is not a route: a recording cannot travel in
+  // one (transcription/ui/state.ts).
+  | { view: 'transcriptions'; id?: string; search?: string; folder?: string };
 
 export interface AppContext {
   user: AppState;

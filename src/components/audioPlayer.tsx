@@ -3,7 +3,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/ho
 import type { AudioPreset, FileEntry, ScoreFace } from '../types';
 import { generateId } from '../utils';
 import { t } from '../services/i18nService';
-import { playIcon, pauseIcon, stopIcon, repeatIcon, boundIcon } from './playbackIcons';
+import { playIcon, pauseIcon, stopIcon, repeatIcon, boundIcon, crossIcon, noteIcon } from './playbackIcons';
+import { unlockAbcjsAudio } from '../services/audioSession';
 import { AudioEngine, type AudioEffects } from './audioEngine';
 import { SyncedScore, passStartsOf } from './syncedScore';
 import type { ScoreEditor } from './scoreEditor';
@@ -386,6 +387,17 @@ export interface AudioPlayerHooks {
   region?: Region;
   /** Plays as soon as it is loaded. */
   autoplay?: boolean;
+  /** Hears the region each time it is set — by the user's handles, the
+   *  bound buttons, the reset, or the load. A transcription's passage
+   *  (transcription/ui/setup.tsx, 2026-11-28). */
+  onRegion?: (r: Region) => void;
+  /** Where the cross takes the region back to, in the player's time:
+   *  the whole when absent (a transcription's range, ScoreFollowView's
+   *  `home`). */
+  home?: Region;
+  /** The waveform and the transport only: no tempo, transposition nor pitch
+   *  — a passage being chosen, not a tune being practised. */
+  bare?: boolean;
 }
 
 /** A score drawn above the waveform, following what plays (syncedScore.tsx):
@@ -431,6 +443,10 @@ export function AudioPlayer({ entry, binding, hooks, score }: {
 
   const [status, setStatus] = useState<Status>({ kind: 'loading' });
   const [repeat, setRepeat] = useState(true);
+  /** With a score: its notes sounded on the synth as they are reached, over
+   *  the recording (syncedScore.tsx's voice — 2026-11-28, the user: to
+   *  correct a transcription by ear). Off at each opening. */
+  const [voice, setVoice] = useState(false);
   const [region, setRegionState] = useState<Region>({ start: 0, end: 1 });
   const [effects, setEffectsState] = useState<AudioEffects>({ tempo: 100, transpose: 0, pitch: 0 });
   const [waveW, setWaveW] = useState(400);
@@ -473,10 +489,13 @@ export function AudioPlayer({ entry, binding, hooks, score }: {
    *  whose state changed — usually none. */
   const barFills = useRef<{ el: Element; fill: string }[]>([]);
 
+  const onRegionRef = useRef(hooks?.onRegion);
+  onRegionRef.current = hooks?.onRegion;
   const setRegion = (r: Region) => {
     regionRef.current = r;
     engine.setRegionBounds(r.start, r.end);
     setRegionState(r);
+    onRegionRef.current?.(r);
   };
 
   // A score's passes, as marks under the waveform, and the one being heard.
@@ -752,8 +771,11 @@ export function AudioPlayer({ entry, binding, hooks, score }: {
     engine.applyRegion();
   };
   const resetRegion = () => {
-    setRegion({ start: 0, end: durationRef.current });
-    engine.seek(0);
+    const home = hooks?.home;
+    const d = durationRef.current;
+    const start = home ? Math.max(0, Math.min(home.start, d - MIN_REGION_S)) : 0;
+    setRegion({ start, end: home ? Math.max(start + MIN_REGION_S, Math.min(home.end, d)) : d });
+    engine.seek(start);
   };
 
   if (status.kind !== 'ready') {
@@ -813,6 +835,7 @@ export function AudioPlayer({ entry, binding, hooks, score }: {
           region={region}
           transpose={effects.transpose + (score.keyShift ?? 0)}
           playing={playing}
+          voice={voice}
           maxHeight={score.maxHeight}
           minHeight={score.minHeight}
           face={score.face}
@@ -903,18 +926,31 @@ export function AudioPlayer({ entry, binding, hooks, score }: {
           title={t('audioPlayer.play')}
           onClick={() => { if (engine.isPlaying()) engine.pause(); else void engine.play(); }}
         />
-        <TransportButton html={stopIcon()} title={t('audioPlayer.stop')} onClick={() => engine.stop()} />
+        {/* Bare, no Stop: play and pause choose a passage, and the row then
+            holds on a phone (the review of 2026-11-28). */}
+        {!hooks?.bare && <TransportButton html={stopIcon()} title={t('audioPlayer.stop')} onClick={() => engine.stop()} />}
         <TransportButton
           html={repeatIcon()}
           title={t('audioPlayer.repeat')}
           active={repeat}
           onClick={() => { const next = !repeat; setRepeat(next); engine.setRepeat(next); }}
         />
+        {score && (
+          <TransportButton
+            html={noteIcon()}
+            title={t('audioPlayer.voice')}
+            active={voice}
+            // within the tap: the synth's audio is unlocked here (iOS)
+            onClick={() => { unlockAbcjsAudio(); setVoice(v => !v); }}
+          />
+        )}
         <div style={{ flex: 1 }} />
         <SmallButton html={boundIcon('in', 12)} title={t('audioPlayer.setStart.title')} onClick={setStartHere} />
         <SmallButton html={boundIcon('out', 12)} title={t('audioPlayer.setEnd.title')} onClick={setEndHere} />
-        <SmallButton text={t('audioPlayer.reset')} title={t('audioPlayer.reset.title')} onClick={resetRegion} />
-        {!inRow && (
+        {/* The bounds taken off: a cross, as the score viewer's (the user,
+            2026-11-28) — "Clear" read as clearing the recording. */}
+        <SmallButton html={crossIcon(12)} title={t('audioPlayer.reset.title')} onClick={resetRegion} />
+        {!inRow && !hooks?.bare && (
           // An icon, the names in its tooltip: worded, it did not fit the row
           // of a 360 px phone (measured: 341 px wanted for 320).
           <button
@@ -936,7 +972,7 @@ export function AudioPlayer({ entry, binding, hooks, score }: {
 
       {/* Sliders: the three in a row; or the tempo, and under it what the
           fork unfolds. */}
-      <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '12px' }}>
+      {!hooks?.bare && <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '12px' }}>
         <div ref={slidersRef} style={inRow
           ? { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '0 16px' }
           : { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: '10px 0' }}>
@@ -949,7 +985,7 @@ export function AudioPlayer({ entry, binding, hooks, score }: {
             fmt={v => `${v >= 0 ? '+' : ''}${v} ¢`} value={effects.pitch} onChange={v => setEffect({ pitch: v })} />
           </>}
         </div>
-      </div>
+      </div>}
 
       {/* Under the sliders, Save and what writes (the user, 2026-10-10) —
           as under the score viewer's source. */}

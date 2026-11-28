@@ -716,9 +716,10 @@ export function mountAbcViewer(ctx: ViewerContext): void {
    *  (`choose`) — unless the question was walked away from, or the viewer
    *  closed or another way turned it on meanwhile. */
   let choosing = false;
-  const turnOnAudioSync = (forced: boolean): void => {
+  const turnOnAudioSync = (asked: boolean): void => {
     // It takes the Play-along's place: a take in hand is asked about first.
-    if (playAlongView?.settleTake(() => turnOnAudioSync(forced))) return;
+    if (playAlongView?.settleTake(() => turnOnAudioSync(asked))) return;
+    const forced = asked || !!audioSync?.forcedByDefault;
     if (!audioSync?.choose) {
       audioSyncForced = forced;
       setAudioSync(true);
@@ -855,7 +856,7 @@ export function mountAbcViewer(ctx: ViewerContext): void {
     // A tab: pressed again while on, it stays on.
     setPlayAlong(true);
   };
-  if (sourcesOn) sourceSeg.appendChild(playAlongBtn);
+  if (sourcesOn && opts?.playAlong !== false) sourceSeg.appendChild(playAlongBtn);
   versionChangedForPlayAlong();
   // The synth's tab: back to the score's own sound — a Play-along's take in
   // hand asked about first.
@@ -1877,6 +1878,12 @@ export function mountAbcViewer(ctx: ViewerContext): void {
     if (playAlongView?.settleTake(() => { if (!guardDraft(dismiss)) dismiss(); })) return true;
     return guardDraft(dismiss);
   };
+  ctx.hooks.pendingText = () => {
+    if (!draft) return null;
+    const next = [...tunes];
+    next[draft.index] = withXLine(draft.index, draft.body);
+    return next.join('\n');
+  };
 
   function goToVersion(index: number): void {
     stopPlay();
@@ -2890,9 +2897,26 @@ export function mountAbcViewer(ctx: ViewerContext): void {
       // notes, to the next one, as it would start from there.
       refreshTextPreview();
       if (index === undefined) return;
+      soundNoteAt(index);
+    });
+    // A note typed is heard as a note tapped is (2026-11-28, the user: in a
+    // transcription's editor and in every score's): its letter, or the octave
+    // mark that moves it — the note the caret has just closed. Typed only: a
+    // paste or a deletion sounds nothing.
+    textarea.addEventListener('input', (e) => {
+      const ie = e as InputEvent;
+      if (ie.inputType !== 'insertText' || !ie.data || !/^[A-Ga-g',]$/.test(ie.data)) return;
+      const caret = textarea.selectionStart;
+      if (textarea.selectionEnd !== caret || caret < 1) return;
+      soundNoteAt(caret - 1);
+    });
+    /** The note at `index` in the text, heard on its own — not while the
+     *  music plays, and as the preferences say (tapPlaysNote). */
+    function soundNoteAt(index: number): void {
       const state = player.state();
       if (!showsText(currentMode) || state === 'playing' || state === 'loading') return;
       if (!tapPlaysNote(appState.value)) return;
+      const text = textarea.value;
       const xLine = splitXLine(tunes[currentIndex] ?? '').xLine;
       const key = `${transpose}|${selectedProgram ?? ''}|${xLine}\n${text}`;
       if (key !== tapKey) {
@@ -2912,7 +2936,7 @@ export function mountAbcViewer(ctx: ViewerContext): void {
       unlockAbcjsAudio();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       playTap(abcjs, tapTracks(note.pitches, note.graces, secondsPerWhole(tapTune as any, tempoPercent), selectedProgram));
-    });
+    }
 
     // ── The transport ──
     const transport: ScoreEngine['transport'] = {
@@ -2951,6 +2975,9 @@ export function mountAbcViewer(ctx: ViewerContext): void {
       // The audio sync's player has the key (syncedScore.tsx); the
       // Play-along plays nothing to pause.
       if (audioSyncView || playAlongView) return;
+      // A score in a page: not under a dialog opened over it (its own full
+      // page aside — that one is the score).
+      if (ctx.ownsKeys && !page.on && !ctx.ownsKeys()) return;
       const active = document.activeElement as HTMLElement | null;
       const tag = active?.tagName.toLowerCase();
       if (tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'button' || active?.isContentEditable) return;

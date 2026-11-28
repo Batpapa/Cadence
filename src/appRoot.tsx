@@ -18,6 +18,8 @@ import { StudyView } from './views/study';
 import { ModulesView } from './views/modules';
 import { SessionsView } from './views/sessions';
 import { TrendingView } from './views/trending';
+import { TranscriptionsView } from './views/transcriptions';
+import { transcriptionOffered } from './services/extensions';
 import { useDrawerSwipe } from './components/drawerSwipe';
 
 const SIDEBAR_WIDTH_KEY     = 'cadence_sidebar_width';
@@ -73,6 +75,12 @@ function ContentSwitch() {
   // mount only. The analyses' folders share one key, see SessionLibrary.
   if (route.view === 'sessions') return <SessionsView key={route.sessionId ?? (route.tab === 'tunes' ? 'detections' : 'library')} {...route} />;
   if (route.view === 'trending') return <TrendingView key={e} />;
+  // Keyed on the transcription: its screen holds a score viewer of its own.
+  // Not offered (unreleased, or switched off): the library, whatever route
+  // led here.
+  if (route.view === 'transcriptions') return transcriptionOffered()
+    ? <TranscriptionsView key={e + (route.id ?? 'list')} {...route} />
+    : <LibraryView key={e} />;
   const _: never = route; return _;
 }
 

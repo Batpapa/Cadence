@@ -18,7 +18,8 @@ import { AttachmentList, CardRefList, showCardPicker, cardToRef, openCardScore, 
   type AttachmentListOptions } from '../components/attachmentList';
 import { decksContainingCard, deckPath } from '../services/deckService';
 import { findBacklinks, findSetsContaining } from '../services/cardRefService';
-import { CARD_TYPES, CARD_TYPE_TUNESET, cardTypeLabelKey, isTuneset, canBeTuneOf, isTypeLocked, applyCardType } from '../services/cardTypeService';
+import { CARD_TYPES, CARD_TYPE_TUNESET, cardTypeLabelKey, isTuneset, canBeTuneOf, isTypeLocked, applyCardType, knownCardType } from '../services/cardTypeService';
+import { cardTypesOffered } from '../services/extensions';
 import { cardTypeIcon } from '../components/cardTypeIcon';
 import { tunesetAutoName } from '../services/stateNormalise';
 import { defaultTuneRepeat, addTunesetAbcOnBecomingSet } from '../services/abcService';
@@ -640,7 +641,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
   );
   const typeMenu = useContextMenu([
     { label: t('card.type.none'), onClick: () => setCardType(cardId, '') },
-    ...CARD_TYPES.map(ct => ({
+    ...(cardTypesOffered() ? CARD_TYPES : []).map(ct => ({
       label: t(cardTypeLabelKey(ct)),
       icon: cardTypeIcon(ct),
       onClick: () => setCardType(cardId, ct),
@@ -950,6 +951,10 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
           word, not a form field. The value is the control — clicking it raises
           the same overflow menu the attachments "+" uses, or, when the card is
           already playing in a set, the modal explaining why it cannot move. */}
+      {/* Only with the card types to choose from (the Music extension), or
+          for a card that has one already — "none" alone is no choice (the
+          user, 2026-11-28). The type itself is the card's either way. */}
+      {(cardTypesOffered() || knownCardType(card) !== undefined) && (
       <div class="flex items-center gap-2" data-tour="card-type">
         <span class="section-title shrink-0">{t('card.section.type')}</span>
         <button
@@ -966,6 +971,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
         </button>
         {typeMenu.menu}
       </div>
+      )}
 
       {/* ── Tags ── */}
       {/* A tap on a tag lists every card carrying it in the library

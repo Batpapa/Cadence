@@ -20,6 +20,7 @@ import { initSessionDbForUser, initAudioUploadRetry } from './session/db';
 import { initAudioDownloads } from './session/audioDownloads';
 import { installCardRecognition } from './session/recognition/cardIndexSource';
 import { initAttachmentDbForUser } from './services/attachmentDb';
+import { initTranscriptionDbForUser } from './transcription/audioDb';
 import { initAttachmentSync } from './services/attachmentStore';
 import { applyDriveState, showDriveConflictModal } from './components/driveConflictModal';
 import { migrateState, applyExternalData } from './services/migration';
@@ -101,6 +102,7 @@ export async function createAndOpenUser(name: string, root: HTMLElement): Promis
 async function openUserStores(userId: string): Promise<void> {
   await initSessionDbForUser(userId);
   initAttachmentDbForUser(userId);
+  initTranscriptionDbForUser(userId);
   initAttachmentSync();
 }
 
